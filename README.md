@@ -4,6 +4,25 @@
 
 代码与流程来自 dp-manip 仓库，9.25 在 ubuntu 上验证过（见 dp-manip `docs/0925-smoke.md`）；文中的 final-plan 指 dp-manip `docs/final-plan.md`。
 
+## 每人负责一个任务：最短步骤
+
+```bash
+git clone maniskill-demogen.bundle maniskill-demogen && cd maniskill-demogen
+./setup.sh                 # 一次，在能上网的节点（登录节点）
+./check_env.sh             # 一次，在要跑生成的 GPU 节点，几分钟
+./generate.sh <task>       # 在 GPU 节点；或 sbatch --export=TASK=<task> slurm/generate_task.sbatch
+```
+
+`<task>` 是 `pickcube`、`stackcube`、`pushcube`、`pullcube`、`peginsertionside`、`plugcharger` 之一。结束时会打印训练数据的位置和条数，例如：
+
+```
+train 400 demos, ... action 8 (pd_joint_pos), obs 46, obs_rgb/state 25, images [128, 128, 6]
+      data/dataset/train/PlugCharger-v1/motionplanning/trajectory.state.pd_joint_pos.physx_cpu.h5
+val    50 demos, ...
+```
+
+中断后重新执行同一条命令，从断点继续。完整输出在 `data/logs/<task>.out`。
+
 ## 需要什么
 
 | | 说明 |

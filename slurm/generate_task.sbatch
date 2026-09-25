@@ -10,6 +10,7 @@
 #SBATCH --job-name=demogen
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
+# One task runs one process at a time; 4 CPUs leave room for the renderer and I/O.
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm-%x-%j.out
@@ -19,4 +20,4 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 unset UV_PROJECT_ENVIRONMENT
 # shellcheck disable=SC2086  # ARGS is a list of arguments
-.venv/bin/python generate_task.py "$TASK" ${ARGS:-}
+./generate.sh "$TASK" ${ARGS:-}
