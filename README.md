@@ -1,27 +1,75 @@
 # maniskill-demogen
 
-在任意 Linux x86_64 机器（集群节点）上为 DASC7606C Track 3 生成 ManiSkill 3 示范数据：运动规划专家 → 转换到计划的控制模式（rgb 与 state 各一次）→ 修正第 0 帧 → 导出成与官方示范相同的格式，**一个任务一个作业**。
+为 DASC7606C Track 3 生成 ManiSkill 3 示范数据（RGB + state），**每人负责一个任务，一条命令生成这个任务的全部数据**。流程：运动规划专家 → 回放并录下观测（rgb、state 各一次；回放未成功的丢弃）→ 修正第 0 帧 → 导出成与 ManiSkill 官方示范相同的格式（训练 400 条、验证 50 条）。
 
-代码与流程来自 dp-manip 仓库，9.25 在 ubuntu 上验证过（见 dp-manip `docs/0925-smoke.md`）；文中的 final-plan 指 dp-manip `docs/final-plan.md`。
+任务：`pickcube`、`stackcube`、`pushcube`、`pullcube`、`peginsertionside`、`plugcharger`。
 
-## 每人负责一个任务：最短步骤
+## 快速开始（在集群上，每人一个任务）
+
+需要：Linux x86_64，能上网的登录节点，带 NVIDIA GPU 的计算节点。不需要 sudo、conda、CUDA。
+
+**1. 登录节点：安装 uv、拉取仓库、装环境（一次，约 2 分钟）**
 
 ```bash
-git clone maniskill-demogen.bundle maniskill-demogen && cd maniskill-demogen
-./setup.sh                 # 一次，在能上网的节点（登录节点）
-./check_env.sh             # 一次，在要跑生成的 GPU 节点，几分钟
-./generate.sh <task>       # 在 GPU 节点；或 sbatch --export=TASK=<task> slurm/generate_task.sbatch
+curl -LsSf https://astral.sh/uv/install.sh | sh     # 已有 uv 可跳过
+export PATH="$HOME/.local/bin:$PATH"                 # 非交互式 shell 里需要手动加
+git clone https://github.com/hollinsStuart/maniskill-demogen.git
+cd maniskill-demogen
+./setup.sh
 ```
 
-`<task>` 是 `pickcube`、`stackcube`、`pushcube`、`pullcube`、`peginsertionside`、`plugcharger` 之一。结束时会打印训练数据的位置和条数，例如：
+最后一行是 `Environment ready. Next: ./check_env.sh` 即成功。环境装在仓库里的 `.venv/`（Python 3.11 由 uv 下载），计算节点通过共享的家目录直接使用。
+
+**2. 计算节点：检查这台节点能不能生成（一次，几分钟）**
+
+先申请一个 GPU 节点（HKU 集群用 `gpu-interactive`；一般 SLURM 用 `srun --gres=gpu:1 --cpus-per-task=4 --pty bash` 或 `salloc`），然后：
+
+```bash
+cd ~/maniskill-demogen
+./check_env.sh 2>&1 | tee check_env.log
+```
+
+最后一行是 `=== check passed` 即可；`=== rendering speed` 一段给出渲染耗时（RTX 4080 约 1–2 ms/步）。
+
+**3. 计算节点：生成自己的任务**
+
+```bash
+./generate.sh <task>
+```
+
+或者提交成批处理作业（断网、退出登录都不影响）：
+
+```bash
+sbatch --export=TASK=<task> slurm/generate_task.sbatch
+```
+
+结束时打印训练数据的位置和条数，例如：
 
 ```
+=== plugcharger (PlugCharger-v1) dataset
 train 400 demos, ... action 8 (pd_joint_pos), obs 46, obs_rgb/state 25, images [128, 128, 6]
       data/dataset/train/PlugCharger-v1/motionplanning/trajectory.state.pd_joint_pos.physx_cpu.h5
 val    50 demos, ...
+preview (first and last frames): data/dataset/train/PlugCharger-v1/motionplanning/sample.png
+=== plugcharger done
 ```
 
-中断后重新执行同一条命令，从断点继续。完整输出在 `data/logs/<task>.out`。
+**交给训练的是 `data/dataset/`** 下的 `.h5`（及同名 `.json`、`.export_info.json`）；`data/work/` 是中间文件。完整输出在 `data/logs/<task>.out`。**中断后重新执行同一条命令，会从断点继续**，已完成的步骤不会重做。
+
+预计（单个任务，RTX 4080 节点）：4 维任务约 0.5–1 小时，PegInsertionSide、PlugCharger 约 1–2 小时（由 ubuntu 实测推算）。磁盘每个任务约 2–4 GB；家目录放不下时加 `--out /scratch 下的目录`。
+
+## 常见问题
+
+| 现象 | 处理 |
+| --- | --- |
+| `uv: command not found` | `export PATH="$HOME/.local/bin:$PATH"`（uv 安装脚本只改交互式 shell 的配置） |
+| `setup.sh` 下载失败 | 所在节点不能上网，换到登录节点执行 |
+| `libGL.so.1` 缺失 | 已处理：仓库用 `opencv-python-headless`；若仍出现，先 `git pull` 再 `./setup.sh` |
+| `Failed to find system libvulkan` 警告 | 可以忽略，SAPIEN 自带 libvulkan，照样走 NVIDIA 驱动 |
+| `check_env.sh` 渲染失败 | 看 `ls /usr/share/vulkan/icd.d/`：有 `nvidia_icd.json` 就能用；驱动的 json 在别处时 `export VK_ICD_FILENAMES=<路径>` |
+| 某一步报 `exists but is not marked done` | 上次被中断留下了半截文件（或另一个进程正在写）。确认没有别的进程在跑后，删掉报错里的那个文件再重跑 |
+| 导出报 `only N usable demos, need 400` | 回放成功的不够：删掉 `data/work/<Env>/motionplanning/` 下对应 split 的文件，用更大的 `--n-train` / `--n-val` 重跑 |
+| 作业数量受限 | 一个任务只占一个作业；也可在已有分配里 `srun --jobid=<id> --overlap ./generate.sh <task>`（放在 tmux 里防断线） |
 
 ## 需要什么
 
@@ -29,49 +77,26 @@ val    50 demos, ...
 | --- | --- |
 | 系统 | Linux x86_64（mplib 只有这个平台的 wheel），无需 sudo、conda、CUDA |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh`；安装时要能访问 PyPI 和 download.pytorch.org |
-| CPU / 内存 | 每个任务作业 4 核、16 GB 足够（仿真和运动规划都在 CPU 上） |
+| CPU / 内存 | 每个任务 4 核、16 GB 足够（仿真和运动规划都在 CPU 上，一个任务同一时间只跑一个进程） |
 | **渲染（只有 rgb 需要）** | 一个 Vulkan 设备，二选一：<br>• NVIDIA GPU + 带 Vulkan 的驱动（`/usr/share/vulkan/icd.d/nvidia_icd.json`）：快<br>• 纯 CPU 节点 + Mesa lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）：慢 7–17 倍，但 4 核就够 |
 
 不需要 GPU 算力：torch 是 CPU 版，GPU 只用来渲染。
 
-## 把仓库放到服务器上
+## 进阶用法
 
-仓库只有代码（不含 `.venv` 和数据，约 100 KB），环境由 `setup.sh` 在服务器上联网安装，数据在服务器上生成，不需要上传大文件：
-
-```bash
-# 本机
-git bundle create maniskill-demogen.bundle --all
-scp maniskill-demogen.bundle <server>:
-# 服务器
-git clone maniskill-demogen.bundle maniskill-demogen && cd maniskill-demogen
-```
-
-服务器不能联网时，`setup.sh` 装不了依赖，需要另想办法（例如在能联网的同类机器上装好后整体拷过去）。
-
-## 用法
+`generate.sh` 把参数原样传给 `generate_task.py`，也可以直接调用它：
 
 ```bash
-./setup.sh              # uv sync --frozen（Python 3.11 由 uv 下载）+ mplib 补丁
-./check_env.sh          # 在作业节点上跑：生成 PickCube 和 PlugCharger 各几条并检查，几分钟
-
-# 一个任务（全部阶段；中断后重跑会从断点继续）
-.venv/bin/python generate_task.py pickcube
-# SLURM：一个任务一个作业，按集群改分区、GPU 行
-for t in pickcube stackcube pushcube pullcube peginsertionside plugcharger; do
-  sbatch --job-name=gen-$t --export=TASK=$t slurm/generate_task.sbatch
-done
+.venv/bin/python generate_task.py pickcube --stages expert        # 只跑某些阶段
+.venv/bin/python generate_task.py --help                          # 全部参数
 ```
 
-**作业数量受限时**（HKU 集群就是这样），用一个作业跑全部任务，同时跑的个数等于申请的 CPU 数：
+一个人要跑多个任务、而作业数量有限时，`run_all.sh` 在一次分配里并行跑（同时跑的个数 = CPU 数）：
 
 ```bash
-sbatch slurm/run_all.sbatch                                  # 一个作业，4 CPU + 1 GPU
-srun --jobid=<已有分配的 id> --overlap ./run_all.sh           # 或在已有的交互式分配里（建议放在 tmux 里）
+sbatch slurm/run_all.sbatch                                  # 一个作业，4 CPU + 1 GPU，六个任务
+JOBS=2 ./run_all.sh pickcube stackcube                       # 在已有分配里跑其中几个
 ```
-
-每个任务的完整输出在 `data/logs/<task>.out`，步骤汇总在 `data/logs/<task>.log`。被中断后重新执行同一条命令，会从断点继续。
-
-**集群实测（9.25，gpu-4080-402，RTX 4080 SUPER，4 CPU）**：`check_env.sh` 通过，渲染每步只多 1.0 ms（单相机）/ 1.7 ms（双相机）。按 ubuntu 满负载时的速度估算，4 个任务并行，全部 6 个任务约 1.5–2.5 小时；磁盘约 15 GB（导出约 6.5 GB，`work/` 里的中间文件和它差不多大），放不下家目录时用 `OUT=` 或 `--out` 指到 scratch。
 
 常用参数（`generate_task.py --help` 有完整说明）：
 
@@ -144,6 +169,11 @@ HDF5 与队友验证过的官方示范同结构（`traj_N/obs, actions, success,
 
 - ubuntu（GTX 1080 Ti，NVIDIA Vulkan）：dp-manip 的同一套脚本生成 6 个任务，VariDP 原版代码训练和评估跑通。
 - wsl（无 NVIDIA Vulkan，lavapipe）：本仓库从零 `setup.sh` + `check_env.sh` 通过。与 ubuntu 生成的数据相比，同一种子的示范长度、转换成败相同，数值只有浮点级差异（PickCube ≤ 1e-4，PlugCharger ≤ 0.03），图像平均差 0.3 个灰度级。**最终数据应全部在同一种机器上生成。**
-- 渲染耗时（每步）：lavapipe 1 路相机 14 ms、2 路 63 ms；NVIDIA 1080 Ti 2–4 ms。wsl 上 lavapipe 的 rgb 重放：PegInsertionSide 约 10 s/条、PlugCharger 约 12 s/条。估算单任务作业：4 维单相机任务不到 1 小时，StackCube 约 1–2 小时，PegInsertionSide 约 1.5 小时，PlugCharger 约 2.5 小时；有 NVIDIA Vulkan 时快得多。
+- HKU 集群 GPU 节点（RTX 4080 SUPER，4 CPU）：`setup.sh` + `check_env.sh` 通过，渲染每步只多 1.0 ms（单相机）/ 1.7 ms（双相机）。
+- 渲染耗时（每步）：lavapipe 1 路相机 14 ms、2 路 63 ms；NVIDIA 1080 Ti 2–4 ms。只有 lavapipe 时的单任务估算：4 维单相机任务不到 1 小时，StackCube 约 1–2 小时，PegInsertionSide 约 1.5 小时，PlugCharger 约 2.5 小时。
 
 `scripts/check_rgb_obs.py`（可选）在训练机上比较导出文件的首帧和评估环境 reset 出来的观测。
+
+## 来源
+
+代码与流程来自 [dp-manip](https://github.com/hollinsStuart/dp-manip)，9.25 在 ubuntu 上验证过。注释和本文中的 final-plan 指 dp-manip 的 `docs/final-plan.md`，`docs/0925-smoke.md` 是那次验证的完整记录。
