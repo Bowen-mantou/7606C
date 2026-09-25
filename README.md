@@ -108,7 +108,7 @@ HDF5 与队友验证过的官方示范同结构（`traj_N/obs, actions, success,
 
 ## 环境
 
-`pyproject.toml` / `uv.lock` 复刻 dp-manip ubuntu 专家环境的版本：Python 3.11、mani-skill 3.0.1、sapien 3.0.3、mplib 0.2.1（覆盖 ManiSkill 要求的 0.1.1）、numpy 1.26.4、gymnasium 1.3.0、torch 2.14.0 CPU 版。`setup.sh` 再对 `.venv` 里的 mani_skill 打 `patches/mani_skill_mplib_0_2_1.patch`（mplib 0.2.1 的 API 变化）；uv 用复制模式安装，补丁不会改到 uv 缓存。
+`pyproject.toml` / `uv.lock` 复刻 dp-manip ubuntu 专家环境的版本：Python 3.11、mani-skill 3.0.1、sapien 3.0.3、mplib 0.2.1（覆盖 ManiSkill 要求的 0.1.1）、numpy 1.26.4、gymnasium 1.3.0、torch 2.14.0 CPU 版；OpenCV 用 `opencv-python-headless`（mani-skill 默认依赖的 `opencv-python` 需要系统的 `libGL.so.1`，HKU 集群登录节点没有）。`setup.sh` 再对 `.venv` 里的 mani_skill 打 `patches/mani_skill_mplib_0_2_1.patch`（mplib 0.2.1 的 API 变化）；uv 用复制模式安装，补丁不会改到 uv 缓存。
 
 ## 已验证
 
