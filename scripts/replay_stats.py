@@ -59,13 +59,15 @@ def main() -> None:
                 if not converted:
                     continue
                 meta = json.loads(converted[0].with_suffix(".json").read_text(encoding="utf-8"))
-                seeds = [episode["episode_seed"] for episode in meta["episodes"]]
-                lengths = [episode["elapsed_steps"] for episode in meta["episodes"]]
-                line.append(f"{mode} {len(seeds)}/{len(raw_seeds)} (dropped {sorted(set(raw_seeds) - set(seeds))})")
+                # Replays run with --allow-failure keep failed episodes; count the successful ones.
+                succeeded = [episode for episode in meta["episodes"] if episode["success"]]
+                seeds = [episode["episode_seed"] for episode in succeeded]
+                lengths = [episode["elapsed_steps"] for episode in succeeded]
+                line.append(f"{mode} replay succeeded {len(seeds)}/{len(raw_seeds)} (failed {sorted(set(raw_seeds) - set(seeds))})")
                 if mode == "rgb":
                     with h5py.File(converted[0], "r") as file:
                         cameras = list(file[f"traj_{meta['episodes'][0]['episode_id']}/obs/sensor_data"].keys())
-                    reset = resets(converted[0])
+                    reset = [seed for seed in resets(converted[0]) if seed in seeds]
                     usable = len(seeds) - len(reset)
                     line.append(f"mid-episode resets {reset}, usable {usable}/{len(raw_seeds)} = {usable / len(raw_seeds):.0%}, "
                                 f"len {min(lengths)}-{int(np.median(lengths))}-{max(lengths)}, cameras {cameras}")

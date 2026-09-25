@@ -30,10 +30,11 @@ paired by seed must agree in actions, env_states, success flags and the agent pa
 the observation. A state replay with ``--use-env-states`` does not work here: in
 mani-skill 3.0.1 it records the step taken from each set state, not the state itself.
 
-Episodes with an env reset in the middle are dropped and listed in the JSON. In 3.0.1
-a control-mode conversion can save failed attempts and the final successful one as a
-single episode (seen on PlugCharger), with a random action on each reset step; such
-an episode shows a joint jump no controller step can make.
+Replays are made with ``--allow-failure``; episodes whose rgb or state replay does not end
+in success are dropped and listed in the JSON. Without that flag, mani-skill 3.0.1 keeps a
+failed replay's steps in the recorder and glues them in front of the next saved episode
+(seen on PlugCharger), with a random action at each reset; as a second guard, episodes
+with a joint jump no controller step can make are dropped too.
 
 Frame 0 (observations, image and env state) comes from the ``<replay stem>.first_obs.h5``
 sidecar that scripts/first_frame_obs.py writes next to every input: 3.0.1 records stale
@@ -101,7 +102,6 @@ def index_replay(path: Path, obs_mode: str) -> tuple[dict, dict[int, dict]]:
             assert seed == item["episode_seed"], f"{path}/{name}: reset seed differs from episode_seed"
             assert item["control_mode"] == env_kwargs["control_mode"], f"{path}/{name}: control mode differs"
             assert item["elapsed_steps"] == len(source[name]["actions"]), f"{path}/{name}: elapsed_steps != len(actions)"
-            assert item["success"] is True, f"{path}/{name}: episode did not succeed"
             assert seed not in episodes, f"{path}: seed {seed} appears twice"
             episodes[seed] = {"path": path, "name": name, "meta": item}
     return meta["env_info"], episodes
@@ -357,8 +357,17 @@ def main() -> None:
     created = [parent for parent in [args.output.parent, *args.output.parent.parents] if not parent.exists()]
     try:
         # Rejected seeds count as conversion failures: "first N" skips them (final-plan §2.2).
+        # Replays run with --allow-failure, so every episode is saved on its own and failed
+        # replays are dropped here. (Without it, mani-skill 3.0.1 keeps a failed replay's steps
+        # in the recorder and glues them in front of the next saved episode.)
         rejected = []
         for seed in seeds:
+            failed = [kind for kind, episodes in (("rgb", rgb_episodes), ("state", state_episodes))
+                      if episodes[seed]["meta"]["success"] is not True]
+            if failed:
+                rejected.append({"seed": seed, "reason": f"{' and '.join(failed)} replay did not end in success"})
+                print(f"drop seed {seed}: {rejected[-1]['reason']}")
+                continue
             episode = rgb_episodes[seed]
             found = reset_step(handles[episode["path"]][episode["name"]])
             if found is not None:

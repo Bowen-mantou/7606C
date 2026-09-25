@@ -8,8 +8,10 @@
 Stages (in order; --stages picks a subset):
   expert  run_cpu.py: motion planning, pd_joint_pos, obs none, successes only. Pool demos
           from seed 0, validation demos from seed 4000 (tasks.py has the counts).
-  rgb     replay_trajectory --use-first-env-state -c <mode> -o rgb --shader minimal
-          (the camera shader of a plain gym.make env, i.e. of the teammates' evaluation)
+  rgb     replay_trajectory --use-first-env-state -c <mode> --allow-failure -o rgb --shader minimal
+          (the camera shader of a plain gym.make env, i.e. of the teammates' evaluation).
+          --allow-failure saves every episode on its own; export drops failed replays. Without
+          it, 3.0.1 glues a failed replay's steps in front of the next saved episode.
   state   the same conversion recording state. CPU physics is deterministic, so both agree
           step by step; export_demos.py checks it. (--use-env-states is not usable: in
           mani-skill 3.0.1 it records one-step predictions, not the states.)
@@ -175,7 +177,7 @@ def main() -> int:
             if not marker.exists():
                 marker.write_text(f"{datetime.now().isoformat()} complete: {counts[split]} episodes (marked afterwards)\n")
         replay = [python, "-m", "mani_skill.trajectory.replay_trajectory", "--traj-path", raw, "-b", "physx_cpu",
-                  "--use-first-env-state", "-c", mode, "--save-traj", "--num-envs", "1"]
+                  "--use-first-env-state", "-c", mode, "--allow-failure", "--save-traj", "--num-envs", "1"]
         if "rgb" in stages and not run.once(f"{split}: rgb conversion", rgb, [*replay, "-o", "rgb", "--shader", "minimal"]):
             continue
         if "state" in stages and not run.once(f"{split}: state conversion", state, [*replay, "-o", "state"]):
