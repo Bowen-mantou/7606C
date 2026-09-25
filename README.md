@@ -43,6 +43,17 @@ for t in pickcube stackcube pushcube pullcube peginsertionside plugcharger; do
 done
 ```
 
+**作业数量受限时**（HKU 集群就是这样），用一个作业跑全部任务，同时跑的个数等于申请的 CPU 数：
+
+```bash
+sbatch slurm/run_all.sbatch                                  # 一个作业，4 CPU + 1 GPU
+srun --jobid=<已有分配的 id> --overlap ./run_all.sh           # 或在已有的交互式分配里（建议放在 tmux 里）
+```
+
+每个任务的完整输出在 `data/logs/<task>.out`，步骤汇总在 `data/logs/<task>.log`。被中断后重新执行同一条命令，会从断点继续。
+
+**集群实测（9.25，gpu-4080-402，RTX 4080 SUPER，4 CPU）**：`check_env.sh` 通过，渲染每步只多 1.0 ms（单相机）/ 1.7 ms（双相机）。按 ubuntu 满负载时的速度估算，4 个任务并行，全部 6 个任务约 1.5–2.5 小时；磁盘约 15 GB（导出约 6.5 GB，`work/` 里的中间文件和它差不多大），放不下家目录时用 `OUT=` 或 `--out` 指到 scratch。
+
 常用参数（`generate_task.py --help` 有完整说明）：
 
 | 参数 | 作用 |
