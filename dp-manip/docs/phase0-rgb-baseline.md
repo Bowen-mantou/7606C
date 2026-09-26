@@ -30,6 +30,10 @@ Phase 10 amended the manifest to schema version 4 by recording the donor MLP str
 (`policy.mlp_hidden_dim/mlp_layers/mlp_time_embed_dim`) migrated from VariDP, again
 without changing any scientific hyperparameter.
 
+Phase 11 amended the manifest to schema version 5 by adding `policy.mlp_obs_feat_dim = 256`:
+the MLP arm regains VariDP's observation MLP (`To*Dobs -> 256 -> 256`), as registered in
+`docs/final-plan.md` §6 B2. No scientific hyperparameter changed.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

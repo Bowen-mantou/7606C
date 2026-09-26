@@ -47,8 +47,9 @@
 - Phase 10 已从 VariDP 迁移 MLP backbone（`dp_manip/backbones/mlp.py`）：忠实移植
   VariDP 本地 baseline 的 `MLPNoisePred`（展平动作 ‖ 时间嵌入 ‖ 展平观测 → 3 层
   Mish/LayerNorm MLP），时间嵌入移入 backbone 以保持统一的原始 timestep contract，
-  观测条件直接使用共享 encoder 的 `(B, To, Dobs)` flatten，不再像 VariDP 那样另建
-  observation MLP。结构参数 `policy.mlp_*` 来自 `baseline.toml`。Phase 0 manifest 升到
+  观测条件为共享 encoder 的 `(B, To, Dobs)` flatten 后再经 VariDP 的 observation MLP
+  （`To*Dobs → 256 → 256`，Phase 11 验收时按 `docs/final-plan.md` §6 B2 补回，宽度由
+  `policy.mlp_obs_feat_dim` 控制）。结构参数 `policy.mlp_*` 来自 `baseline.toml`。Phase 0 manifest 升到
   schema version 4，仅新增 MLP 结构字段，不改任何科学超参。本机 CPU 合成数据实测
   unet/transformer/mlp 三个 arm 的 train→save→resume→load→get_action 全部通过；
   三个 resolved config 只在 `policy.backbone` 上不同（Gate B），

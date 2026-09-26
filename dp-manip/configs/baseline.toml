@@ -33,6 +33,8 @@ transformer_cond_layers = 0
 mlp_hidden_dim = 256
 mlp_layers = 3
 mlp_time_embed_dim = 128
+# Observation MLP of the MLP arm (VariDP obs_feat_dim), docs/final-plan.md §6 B2.
+mlp_obs_feat_dim = 256
 
 [train]
 seed = 1

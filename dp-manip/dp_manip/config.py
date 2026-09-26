@@ -64,6 +64,7 @@ class PolicyConfig:
     mlp_hidden_dim: int = 256
     mlp_layers: int = 3
     mlp_time_embed_dim: int = 128
+    mlp_obs_feat_dim: int = 256
 
 
 @dataclass
@@ -151,8 +152,10 @@ class Config:
                 raise ValueError(f"policy.{name} must be in [0, 1)")
         if policy.transformer_cond_layers < 0:
             raise ValueError("policy.transformer_cond_layers must be non-negative")
-        if policy.mlp_hidden_dim < 1 or policy.mlp_layers < 1:
-            raise ValueError("policy.mlp_hidden_dim and policy.mlp_layers must be positive")
+        if policy.mlp_hidden_dim < 1 or policy.mlp_layers < 1 or policy.mlp_obs_feat_dim < 1:
+            raise ValueError(
+                "policy.mlp_hidden_dim, policy.mlp_layers and policy.mlp_obs_feat_dim must be positive"
+            )
         if policy.mlp_time_embed_dim < 2 or policy.mlp_time_embed_dim % 2:
             raise ValueError("policy.mlp_time_embed_dim must be an even positive number")
         if min(policy.obs_horizon, policy.act_horizon, policy.pred_horizon) < 1:

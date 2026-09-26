@@ -55,7 +55,7 @@ traj_i/actions        float32 (T, A)
 - 每帧视觉特征与 `obs_rgb/state` 的非特权 proprioception 由同一个 observation encoder
   编码成 `(B, To, Dobs)`；`policy.backbone` 选择 noise predictor，目前有 canonical
   `unet`（只在 FiLM 边界把序列 flatten 成 `(B, To*Dobs)`）、从 VariDP 迁移的
-  `transformer`（把 `(B, To, Dobs)` 保留为条件 token）和 `mlp`（flatten 成全局条件）。
+  `transformer`（把 `(B, To, Dobs)` 保留为条件 token）和 `mlp`（flatten 后先经该 arm 的 observation MLP `To*Dobs → 256 → 256`，再作为全局条件）。
 - 动作预测/执行 horizon 为 `16/8`，DDPM 训练和推理均为 100 步。
 - 所有任务、N 和训练种子固定 100k optimizer steps；RGB batch 默认为 64。
 - proprio z-score 与 action min/max **只用当前 N 条训练示范**计算。

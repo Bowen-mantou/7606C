@@ -128,6 +128,19 @@ class NoisePredictorInterfaceTest(unittest.TestCase):
                 self.assertEqual(prediction.shape, (3, 4, 4))
                 self.assertTrue(torch.isfinite(prediction).all())
 
+    def test_mlp_arm_projects_observations_like_the_donor(self) -> None:
+        # docs/final-plan.md §6 B2: flatten(obs) -> 256 -> 256, then concatenate
+        # with the flattened noisy actions and the time embedding. With the
+        # state-PickCube shapes (obs 42, To 2, action 4, Tp 16) VariDP's
+        # MLP([84, 256, 256]) + MLPNoisePred has 88,064 + 264,512 parameters.
+        policy_cfg = load(ROOT / "configs" / "tasks" / "pickcube.toml").policy
+        backbone = MLPBackbone(policy_cfg, obs_dim=42, action_dim=4)
+        first = backbone.obs_mlp[0]
+        self.assertEqual((first.in_features, first.out_features), (84, 256))
+        self.assertEqual(backbone.obs_mlp[-1].out_features, 256)
+        self.assertEqual(backbone.net[0].in_features, 16 * 4 + 128 + 256)
+        self.assertEqual(sum(p.numel() for p in backbone.parameters()), 352_576)
+
     def test_backbone_structure_comes_from_policy_config(self) -> None:
         cases = (
             (UNetBackbone, {"unet_dims": [16, 32]}, {"unet_dims": [32, 64]}),
@@ -244,6 +257,7 @@ class BackboneConfigTest(unittest.TestCase):
             "mlp_hidden_dim",
             "mlp_layers",
             "mlp_time_embed_dim",
+            "mlp_obs_feat_dim",
         ):
             del raw["policy"][name]
         policy = from_dict(raw).policy
@@ -257,6 +271,7 @@ class BackboneConfigTest(unittest.TestCase):
         self.assertEqual(policy.mlp_hidden_dim, 256)
         self.assertEqual(policy.mlp_layers, 3)
         self.assertEqual(policy.mlp_time_embed_dim, 128)
+        self.assertEqual(policy.mlp_obs_feat_dim, 256)
 
     def test_invalid_transformer_structure_is_rejected(self) -> None:
         for override in (
@@ -275,6 +290,7 @@ class BackboneConfigTest(unittest.TestCase):
             "policy.mlp_hidden_dim=0",
             "policy.mlp_time_embed_dim=7",
             "policy.mlp_time_embed_dim=1",
+            "policy.mlp_obs_feat_dim=0",
         ):
             with self.subTest(override=override), self.assertRaisesRegex(ValueError, "policy.mlp"):
                 load(ROOT / "configs" / "tasks" / "pickcube.toml", [override])
