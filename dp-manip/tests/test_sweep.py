@@ -6,7 +6,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from dp_manip.config import load_experiment
+from dp_manip.config import default_run_name, load_experiment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,18 @@ class SweepTest(unittest.TestCase):
         ]
         self.assertEqual(actual, expected)
         self.assertTrue(all(run.config.parent.name == "tasks" for run in task_runs))
+
+    def test_run_names_match_the_trainer_default(self) -> None:
+        module = load_sweep_module()
+        experiment = ROOT / "configs" / "experiments" / "data_size.toml"
+        for run in module.runs(experiment):
+            with self.subTest(run=run):
+                resolved = run.resolve()
+                self.assertEqual(run.name, default_run_name(resolved))
+                self.assertEqual(
+                    run.name,
+                    f"{run.task}_rgb_{resolved.policy.backbone}_n{run.num_demos}_s{run.seed}",
+                )
 
     def test_train_split_eval_uses_experiment_diagnostic_budget(self) -> None:
         module = load_sweep_module()

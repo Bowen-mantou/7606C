@@ -5,7 +5,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from dp_manip.config import from_dict, load, load_experiment
+from dp_manip.config import default_run_name, from_dict, load, load_experiment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,6 +136,14 @@ values = [10]
                 path.write_text(spec + body + "\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "diagnostics"):
                     load_experiment(path)
+
+    def test_run_name_separates_backbone_arms(self) -> None:
+        task = TASKS / "pickcube.toml"
+        unet = load(task, ["data.num_demos=50", "train.seed=2"])
+        # Existing UNet run directories keep their historical names.
+        self.assertEqual(default_run_name(unet), "pickcube_rgb_unet_n50_s2")
+        other = load(task, ["data.num_demos=50", "train.seed=2", 'policy.backbone="transformer"'])
+        self.assertEqual(default_run_name(other), "pickcube_rgb_transformer_n50_s2")
 
     def test_version_one_checkpoint_config_is_adapted(self) -> None:
         expected = load(TASKS / "pickcube.toml")

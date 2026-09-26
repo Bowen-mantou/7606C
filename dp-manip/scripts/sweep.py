@@ -14,7 +14,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from dp_manip.config import ExperimentSpec, load_experiment  # noqa: E402
+from dp_manip.config import (  # noqa: E402
+    Config,
+    ExperimentSpec,
+    default_run_name,
+    load,
+    load_experiment,
+)
 
 
 TASKS = (
@@ -39,9 +45,18 @@ class Run:
     def config(self) -> Path:
         return ROOT / "configs" / "tasks" / f"{self.task}.toml"
 
+    def resolve(self) -> Config:
+        """Resolve the config train_dp.py will see for this cell."""
+        return load(
+            self.config,
+            [f"train.seed={self.seed}"],
+            experiment=self.experiment,
+            experiment_value=self.num_demos,
+        )
+
     @property
     def name(self) -> str:
-        return f"{self.task}_rgb_unet_n{self.num_demos}_s{self.seed}"
+        return default_run_name(self.resolve())
 
 
 def runs(experiment_path: Path = DEFAULT_EXPERIMENT) -> list[Run]:

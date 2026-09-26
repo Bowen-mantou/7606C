@@ -102,7 +102,7 @@ Phase 5 之前的旧 `resume.pt` 没有 `rng` 字段，仍可续训，但会打�
 ## 产物
 
 ```text
-runs/<task>_rgb_unet_n<N>_s<seed>/
+runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # 当前 backbone 只有 unet
   run.json
   metrics.jsonl
   summary.json

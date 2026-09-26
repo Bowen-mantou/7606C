@@ -153,6 +153,15 @@ class Config:
         return dataclasses.asdict(self)
 
 
+def default_run_name(cfg: Config) -> str:
+    """Return the run directory name shared by the trainer and the sweep.
+
+    The backbone is part of the name so different backbone arms with the same
+    task, data size, and seed never share a run directory.
+    """
+    return f"{cfg.task.name}_rgb_{cfg.policy.backbone}_n{cfg.data.num_demos}_s{cfg.train.seed}"
+
+
 @dataclass(frozen=True)
 class ExperimentSpec:
     """A declared experiment variable, grid values, and replicate seeds."""

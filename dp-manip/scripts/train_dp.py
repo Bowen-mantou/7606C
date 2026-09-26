@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--experiment-value", type=int, help="selected value from an experiment grid")
     parser.add_argument("--data-root", type=Path, help="override data.root (for example, a scratch dataset directory)")
     parser.add_argument("--output-root", type=Path, default=ROOT / "runs")
-    parser.add_argument("--exp", help="run directory name; default: <task>_rgb_unet_n<N>_s<seed>")
+    parser.add_argument("--exp", help="run directory name; default: <task>_rgb_<backbone>_n<N>_s<seed>")
     parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--device", default="cuda")
@@ -225,14 +225,22 @@ def main() -> int:
     stats = compute_normalization(train_info)
     train_dataset = RGBWindowDataset(train_info, cfg.policy.obs_horizon, cfg.policy.pred_horizon)
     val_dataset = RGBWindowDataset(val_info, cfg.policy.obs_horizon, cfg.policy.pred_horizon)
-    experiment = args.exp or (
-        f"{cfg.task.name}_rgb_unet_n{cfg.data.num_demos}_s{cfg.train.seed}"
-    )
+    experiment = args.exp or config_lib.default_run_name(cfg)
     run_dir = args.output_root.expanduser().resolve() / experiment
     checkpoint_dir = run_dir / "checkpoints"
     final_path = checkpoint_dir / "final.pt"
     resume_path = checkpoint_dir / "resume.pt"
     if final_path.is_file():
+        # Only skip when the finished run is this configuration; otherwise a
+        # different arm would silently reuse another arm's checkpoint.
+        run_info_path = run_dir / "run.json"
+        if run_info_path.is_file():
+            finished = json.loads(run_info_path.read_text(encoding="utf-8"))["config"]
+            if config_lib.from_dict(finished).to_dict() != cfg.to_dict():
+                raise FileExistsError(
+                    f"{run_dir} holds a finished run with a different config; "
+                    "choose another --exp or output root"
+                )
         print(f"{experiment}: final checkpoint already exists; nothing to do")
         return 0
     run_dir.mkdir(parents=True, exist_ok=True)
