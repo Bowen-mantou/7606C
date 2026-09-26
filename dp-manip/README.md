@@ -176,9 +176,12 @@ fingerprint，所以一个 checkpoint 能追溯到具体的数据文件。
 - `scripts/sweep.py`、`slurm/`：任意 experiment spec 的数组作业（data-size 96 组、backbone 90 组、条件 N=400）。
 - `dp_manip/training.py`：EMA、RNG state 存取、`(seed, step)` 确定性 sampler、resume checkpoint 组装。
 - `baselines/phase0/pickcube_rgb.json`：重构前 RGB baseline 的机器可读 regression reference。
+- `legacy/`：Phase 16 归档的 state-based 工作流（含 `run_cpu.py` 与旧 WSL/Ubuntu 清单）；
+  `tests/test_legacy_boundary.py` 保证正式代码不引用它或 VariDP。
 - `docs/phase0-rgb-baseline.md`：Phase 0 行为清单、真实 smoke 结果和复现命令。
 - `PLAN.md`：数据量实验矩阵和运行口径。
 
-旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md` 和
-`configs/baseline.toml`、`configs/tasks/` 与 `configs/experiments/` 是当前权威定义；
-`configs/*_rgb.toml` 仅为旧命令保留兼容跳转。
+旧的本地 state-based 工作流已归档到 `legacy/`（运行记录、旧操作说明、示范生成脚本和旧环境清单），
+只作历史/调试参考，正式代码不得引用；`VariDP/` 是 backbone 的 frozen donor，canonical 实现已在
+`dp_manip/backbones/`。本 README、`PLAN.md` 和 `configs/baseline.toml`、`configs/tasks/` 与
+`configs/experiments/` 是当前权威定义；`configs/*_rgb.toml` 仅为旧命令保留兼容跳转。

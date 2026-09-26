@@ -97,5 +97,13 @@
   `tests/test_metadata.py` 覆盖共享 helper、context 字段与三个 arm 同 hash；本机 CPU 合成数据
   实测两个入口的 run.json / summary.json / checkpoint fingerprint 全部一致，三个 backbone
   arm 共享同一个 `control_hash`。
+- Phase 16 已执行 §21 Legacy Strategy：state-based 工作流整体归档到 `legacy/`（`state/run_cpu.py`
+  示范生成脚本、9.22–9.24 运行记录与旧操作说明、旧 `patches/` / `manifests/` / `environment/`），
+  归档文档头部加了说明、跨文档链接按新位置修正；`legacy/README.md` 写明边界规则与删除条件
+  （RGB UNet/Transformer/MLP 三条 arm 全部通过 Gate A 后才删，`pre-unified-pipeline` tag 为
+  恢复点）。VariDP 就地标记为 frozen donor（`VariDP/LEGACY.md` + README banner；顶层 README
+  改为两条轨道都由 `dp-manip` 运行）。新增 `tests/test_legacy_boundary.py` 静态检查正式代码
+  （`dp_manip/`、`scripts/`、`slurm/`、`tests/`）不 import/执行 legacy 或 VariDP，并确认归档
+  位置；已创建 annotated tag `pre-unified-pipeline` 指向 Phase 0 冻结的 `834be80`。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

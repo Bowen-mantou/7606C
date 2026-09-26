@@ -1,5 +1,8 @@
 # DASC7606C 小组项目 · Track 3：Simulation Experiments
 
+> **已冻结（Phase 16）**：本仓库是 backbone 实现的 donor，canonical 实现已迁移到
+> `../dp-manip/dp_manip/backbones/`，这里不再参与正式实验。详见 [LEGACY.md](./LEGACY.md)。
+
 在 **≥6 个 ManiSkill 任务**上自采/生成专家演示，训练并评测 **Diffusion Policy（DP）** 基线，
 并围绕一个研究问题做受控实验（**数据效率** / **网络结构对比**）。
 

@@ -9,6 +9,7 @@
 5. 评估使用 `physx_cpu`，因为训练数据由该后端生成。不能把 `physx_cuda` 数字混进同一比较表。
 6. `pd_joint_pos` 动作不能裁剪到 `[-1,1]`；只能在 DDPM 内归一化，送入环境前必须还原。
 7. 不提交 HDF5、checkpoint、run 目录或 Slurm 日志。
+8. `legacy/` 与 `VariDP/` 是冻结的历史/donor 代码，不参与正式实验；正式代码不得 import 或执行它们（`tests/test_legacy_boundary.py` 检查）。
 
 ## 修改后的最低验证
 

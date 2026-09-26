@@ -1,6 +1,9 @@
 # Day 1 记录（9.22）：Mac → Ubuntu → 第一条专家轨迹
 
-> 原 `in.txt`，9.23 归档为 Markdown，内容未改动，只整理了表格格式。文中描述的是 9.22 当天的状态，其中不少事项后来已经解决：MPlib 适配已整理成补丁 `patches/mani_skill_mplib_0_2_1.patch`，正式环境已迁到 `~/Coding/dp-manip/.venv`，训练改由 wsl 承担。当前状态以 [STATUS.md](../STATUS.md) 为准。
+> **已归档到 `legacy/state/`（Phase 16）**：仅作历史/调试参考，不得用于正式实验；
+> 相对链接已按新位置调整，命令里的路径仍是归档时的旧布局。
+
+> 原 `in.txt`，9.23 归档为 Markdown，内容未改动，只整理了表格格式。文中描述的是 9.22 当天的状态，其中不少事项后来已经解决：MPlib 适配已整理成补丁 `patches/mani_skill_mplib_0_2_1.patch`，正式环境已迁到 `~/Coding/dp-manip/.venv`，训练改由 wsl 承担。当前状态以 [STATUS.md](../../../STATUS.md) 为准。
 
 今天我们完成了从 ManiSkill 仿真验证到成功生成第一条 PickCube 专家演示的过程。最终确定的工作方式是：Ubuntu 负责运行 MPlib 专家求解器、生成轨迹；Mac 保留为开发、查看和后续数据分析环境。但 Ubuntu 轨迹复制到 Mac 后的回放，以及 Diffusion Policy 训练，都还没有验证。
 
