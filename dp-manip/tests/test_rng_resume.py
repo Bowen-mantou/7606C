@@ -9,6 +9,7 @@ level; the full trainer is exercised on the cluster.
 
 from __future__ import annotations
 
+import copy
 import random
 import unittest
 
@@ -149,29 +150,52 @@ class ResumeTrajectoryTest(unittest.TestCase):
             self.loss(model, data, batch).backward()
             optimizer.step()
 
+    @staticmethod
+    def scramble_rng() -> None:
+        # A requeued job is a fresh process: its RNG streams carry no memory of
+        # the preempted run until resume.pt is restored.
+        random.seed(999)
+        np.random.seed(999)
+        torch.manual_seed(999)
+
+    def resume(self, data: torch.Tensor, checkpoint: dict, *, restore_rng: bool) -> list[torch.Tensor]:
+        model, optimizer = self.model_and_optimizer()
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        self.scramble_rng()
+        if restore_rng:
+            self.assertTrue(set_rng_state(checkpoint["rng"]))
+        self.train(model, optimizer, data, self.batches(self.PREEMPT_STEP + 1, self.TOTAL_STEPS))
+        return [parameter.detach().clone() for parameter in model.parameters()]
+
     def test_preempted_run_matches_continuous_run(self) -> None:
         data = self.data()
         model, optimizer = self.model_and_optimizer()
-        saved_state = None
-        for index, batch in enumerate(self.batches(1, self.TOTAL_STEPS), start=1):
-            optimizer.zero_grad()
-            self.loss(model, data, batch).backward()
-            optimizer.step()
-            if index == self.PREEMPT_STEP:
-                saved_state = rng_state()
+        checkpoint = None
+        for step, batch in enumerate(self.batches(1, self.TOTAL_STEPS), start=1):
+            self.train(model, optimizer, data, [batch])
+            if step == self.PREEMPT_STEP:
+                # Deep copies: training keeps mutating parameters and Adam
+                # moments in place after the "preemption".
+                checkpoint = {
+                    "model": copy.deepcopy(model.state_dict()),
+                    "optimizer": copy.deepcopy(optimizer.state_dict()),
+                    "rng": rng_state(),
+                }
         continuous = [parameter.detach().clone() for parameter in model.parameters()]
-        self.assertIsNotNone(saved_state)
+        self.assertIsNotNone(checkpoint)
 
-        resumed_model, resumed_optimizer = self.model_and_optimizer()
-        self.train(resumed_model, resumed_optimizer, data, self.batches(1, self.PREEMPT_STEP))
-        self.assertTrue(set_rng_state(saved_state))
-        self.train(
-            resumed_model, resumed_optimizer, data, self.batches(self.PREEMPT_STEP + 1, self.TOTAL_STEPS)
-        )
-        resumed = [parameter.detach().clone() for parameter in resumed_model.parameters()]
-
+        resumed = self.resume(data, checkpoint, restore_rng=True)
         for expected, actual in zip(continuous, resumed):
             self.assertTrue(torch.equal(expected, actual), "resumed weights diverged from continuous training")
+
+        # Guard against a vacuous pass: without the restore, the post-resume
+        # noise draws differ and so must the weights.
+        unrestored = self.resume(data, checkpoint, restore_rng=False)
+        self.assertFalse(
+            all(torch.equal(expected, actual) for expected, actual in zip(continuous, unrestored)),
+            "test cannot detect a missing RNG restore",
+        )
 
     def test_resume_checkpoint_carries_rng_state(self) -> None:
         model, optimizer = self.model_and_optimizer()
