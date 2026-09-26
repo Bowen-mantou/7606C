@@ -155,6 +155,9 @@ class ExperimentSpec:
     variable: str
     values: tuple[Any, ...]
     replicates: Mapping[str, tuple[int, ...]]
+    # Closed-loop ``--split train`` diagnostic budget: the first K training
+    # seeds in ascending order. ``None`` evaluates the whole training subset.
+    train_eval_episodes: int | None = None
 
     def seeds_for(self, value: Any) -> tuple[int, ...]:
         try:
@@ -173,6 +176,11 @@ _SECTIONS = {
     "ema": EmaConfig,
     "diffusion": DiffusionConfig,
     "eval": EvalConfig,
+}
+# Everything else comes from baseline.toml, so tasks cannot drift from it.
+_TASK_LAYER_KEYS = {
+    "task": frozenset({"name", "env_id", "control_mode", "max_episode_steps"}),
+    "data": frozenset({"train_path", "val_path"}),
 }
 
 
@@ -259,7 +267,7 @@ def _parse_override(item: str) -> tuple[str, Any]:
 def load_experiment(path: str | Path) -> ExperimentSpec:
     """Load a sweep definition without leaking its grid into core config code."""
     raw = _read_toml(Path(path))
-    unknown = set(raw) - {"experiment", "replicates"}
+    unknown = set(raw) - {"experiment", "replicates", "diagnostics"}
     if unknown:
         raise ValueError(f"unknown experiment sections: {sorted(unknown)}")
     experiment = raw.get("experiment", {})
@@ -283,7 +291,19 @@ def load_experiment(path: str | Path) -> ExperimentSpec:
     extra = set(raw_replicates) - {str(value) for value in values}
     if extra:
         raise ValueError(f"replicates defined for unknown values: {sorted(extra)}")
-    return ExperimentSpec(str(experiment["name"]), variable, tuple(values), replicates)
+    diagnostics = raw.get("diagnostics", {})
+    if not isinstance(diagnostics, dict) or set(diagnostics) - {"train_eval_episodes"}:
+        raise ValueError("[diagnostics] may only define train_eval_episodes")
+    train_eval_episodes = diagnostics.get("train_eval_episodes")
+    if train_eval_episodes is not None and (
+        isinstance(train_eval_episodes, bool)
+        or not isinstance(train_eval_episodes, int)
+        or train_eval_episodes < 1
+    ):
+        raise ValueError("diagnostics.train_eval_episodes must be a positive integer")
+    return ExperimentSpec(
+        str(experiment["name"]), variable, tuple(values), replicates, train_eval_episodes
+    )
 
 
 def _resolve_legacy_task(path: Path, raw: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
@@ -294,6 +314,26 @@ def _resolve_legacy_task(path: Path, raw: dict[str, Any]) -> tuple[Path, dict[st
         raise ValueError("legacy config must contain only legacy.task_config")
     task_path = (path.parent / legacy["task_config"]).resolve()
     return task_path, _read_toml(task_path)
+
+
+def _check_task_layer(path: Path, raw: Mapping[str, Any]) -> None:
+    """Reject task files that would shadow the canonical baseline."""
+    unknown = set(raw) - set(_TASK_LAYER_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{path}: task configs may only define [task] and [data]; "
+            f"move {sorted(unknown)} to baseline.toml or an experiment override"
+        )
+    for section, allowed in _TASK_LAYER_KEYS.items():
+        values = raw.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"{path}: [{section}] must be a table")
+        extra = set(values) - allowed
+        if extra:
+            raise ValueError(
+                f"{path}: [{section}] keys {sorted(extra)} are not task-specific; "
+                "move them to baseline.toml or an experiment override"
+            )
 
 
 def _default_baseline(task_path: Path) -> Path:
@@ -315,6 +355,7 @@ def load(
     """Resolve baseline -> task -> experiment -> runtime overrides."""
     task_path = Path(path).resolve()
     task_path, task_raw = _resolve_legacy_task(task_path, _read_toml(task_path))
+    _check_task_layer(task_path, task_raw)
     baseline_path = Path(baseline).resolve() if baseline is not None else _default_baseline(task_path)
     raw = _deep_merge(_read_toml(baseline_path), task_raw)
 

@@ -59,8 +59,10 @@ def main() -> None:
     elif args.split == "val":
         seeds = cfg.val_seeds()
     else:
-        # Overfitting diagnostic on this checkpoint's resolved training subset.
-        seeds = [int(seed) for seed in train_data["seeds"]]
+        # Overfitting diagnostic on this checkpoint's training subset, in
+        # ascending seed order: ``--episodes K`` selects the K seeds shared by
+        # every nested subset of size >= K. The experiment spec chooses K.
+        seeds = sorted(int(seed) for seed in train_data["seeds"])
     if args.episodes is not None:
         if args.episodes < 1 or args.episodes > len(seeds):
             raise ValueError(f"--episodes must be in [1, {len(seeds)}] for split {args.split}")

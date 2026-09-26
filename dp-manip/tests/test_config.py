@@ -25,18 +25,23 @@ max_episode_steps = 100
 [data]
 train_path = "train.h5"
 val_path = "val.h5"
-num_demos = 200
 """
         with tempfile.TemporaryDirectory() as directory:
             task = Path(directory) / "task.toml"
             task.write_text(task_text, encoding="utf-8")
             experiment = Path(directory) / "experiment.toml"
-            experiment.write_text("[data]\nnum_demos = 300\n", encoding="utf-8")
-            self.assertEqual(load(task, baseline=BASELINE).data.num_demos, 200)
-            self.assertEqual(
-                load(task, baseline=BASELINE, experiment=experiment).data.num_demos,
-                300,
+            experiment.write_text(
+                "[task]\nmax_episode_steps = 150\n\n[data]\nnum_demos = 300\n",
+                encoding="utf-8",
             )
+            with BASELINE.open("rb") as stream:
+                baseline_demos = tomllib.load(stream)["data"]["num_demos"]
+            resolved = load(task, baseline=BASELINE)
+            self.assertEqual(resolved.data.num_demos, baseline_demos)
+            self.assertEqual(resolved.task.max_episode_steps, 100)
+            resolved = load(task, baseline=BASELINE, experiment=experiment)
+            self.assertEqual(resolved.data.num_demos, 300)
+            self.assertEqual(resolved.task.max_episode_steps, 150)
             resolved = load(
                 task,
                 ["data.num_demos=400"],
@@ -44,6 +49,32 @@ num_demos = 200
                 experiment=experiment,
             )
             self.assertEqual(resolved.data.num_demos, 400)
+
+    def test_task_layer_cannot_shadow_baseline(self) -> None:
+        header = """
+[task]
+name = "drift"
+env_id = "PickCube-v1"
+control_mode = "pd_ee_delta_pos"
+max_episode_steps = 100
+
+[data]
+train_path = "train.h5"
+val_path = "val.h5"
+"""
+        cases = {
+            "baseline section": header + "\n[train]\nbatch_size = 128\n",
+            "baseline key in [data]": header + "num_demos = 200\n",
+            "baseline key in [task]": header.replace(
+                "max_episode_steps = 100", 'max_episode_steps = 100\nsim_backend = "physx_cuda"'
+            ),
+        }
+        for label, text in cases.items():
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                task = Path(directory) / "task.toml"
+                task.write_text(text, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "baseline.toml"):
+                    load(task, baseline=BASELINE)
 
     def test_task_configs_only_contain_task_specific_values(self) -> None:
         expected_task_keys = {"name", "env_id", "control_mode", "max_episode_steps"}
@@ -80,8 +111,31 @@ num_demos = 200
         spec = load_experiment(path)
         self.assertEqual(spec.variable, "data.num_demos")
         self.assertEqual(spec.values, (25, 50, 100, 200))
+        # The train-seed diagnostic must use seeds shared by every nested subset.
+        self.assertEqual(spec.train_eval_episodes, min(spec.values))
+        optional = load_experiment(ROOT / "configs" / "experiments" / "data_size_optional400.toml")
+        self.assertEqual(optional.train_eval_episodes, spec.train_eval_episodes)
         resolved = load(TASKS / "pickcube.toml", experiment=path, experiment_value=50)
         self.assertEqual(resolved.data.num_demos, 50)
+
+    def test_invalid_diagnostics_are_rejected(self) -> None:
+        spec = """
+[experiment]
+name = "bad"
+variable = "data.num_demos"
+values = [10]
+
+[replicates]
+"10" = [1]
+
+[diagnostics]
+"""
+        for body in ("train_eval_episodes = 0", "train_eval_episodes = true", "other = 1"):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "experiment.toml"
+                path.write_text(spec + body + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "diagnostics"):
+                    load_experiment(path)
 
     def test_version_one_checkpoint_config_is_adapted(self) -> None:
         expected = load(TASKS / "pickcube.toml")

@@ -76,16 +76,7 @@ def selected_run(args: argparse.Namespace) -> Run:
     return grid[args.index]
 
 
-def main() -> None:
-    args = parse_args()
-    grid = runs(args.experiment)
-    if args.action == "show":
-        for index, run in enumerate(grid):
-            print(f"{index:03d} {run.name} {run.config.relative_to(ROOT)}")
-        print(f"{len(grid)} runs")
-        return
-
-    run = selected_run(args)
+def build_command(args: argparse.Namespace, run: Run) -> list[str]:
     if args.action == "train":
         command = [
             sys.executable,
@@ -116,12 +107,31 @@ def main() -> None:
             "--split",
             args.split,
         ]
-        if args.episodes is not None:
-            command.extend(("--episodes", str(args.episodes)))
+        episodes = args.episodes
+        if episodes is None and args.split == "train":
+            # The experiment, not the evaluator, decides which training seeds
+            # make the overfitting diagnostic comparable across the grid.
+            episodes = load_experiment(args.experiment).train_eval_episodes
+        if episodes is not None:
+            command.extend(("--episodes", str(episodes)))
         if args.num_envs is not None:
             command.extend(("--num-envs", str(args.num_envs)))
         if args.render_backend is not None:
             command.extend(("--render-backend", args.render_backend))
+    return command
+
+
+def main() -> None:
+    args = parse_args()
+    grid = runs(args.experiment)
+    if args.action == "show":
+        for index, run in enumerate(grid):
+            print(f"{index:03d} {run.name} {run.config.relative_to(ROOT)}")
+        print(f"{len(grid)} runs")
+        return
+
+    run = selected_run(args)
+    command = build_command(args, run)
     print(f"[{args.index}] {run.name}", flush=True)
     process = subprocess.Popen(command, cwd=ROOT)
 
