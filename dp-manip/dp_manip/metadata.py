@@ -11,7 +11,7 @@ if TYPE_CHECKING:  # typing only: importing dp_manip.data would pull in torch
     from .data import DatasetInfo
 
 
-def git_revision(cwd: str | Path) -> dict[str, str | None]:
+def git_revision(cwd: str | Path) -> dict[str, str | bool | None]:
     """Record the exact code revision; missing git is reported as ``None``."""
 
     def capture(*arguments: str) -> str | None:
@@ -23,7 +23,9 @@ def git_revision(cwd: str | Path) -> dict[str, str | None]:
             return None
         return result.stdout.strip() if result.returncode == 0 else None
 
-    status = capture("status", "--porcelain")
+    # Only modified tracked files change the code that ran; an untracked note
+    # or scratch file must not mark every run as dirty.
+    status = capture("status", "--porcelain", "--untracked-files=no")
     return {
         "commit": capture("rev-parse", "HEAD"),
         "branch": capture("rev-parse", "--abbrev-ref", "HEAD"),

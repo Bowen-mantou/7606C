@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,29 @@ class GitRevisionTest(unittest.TestCase):
         self.assertRegex(revision["commit"], r"^[0-9a-f]{40}$")
         self.assertTrue(revision["branch"])
         self.assertIsInstance(revision["dirty"], bool)
+
+    def test_dirty_tracks_modified_files_not_untracked_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+
+            def git(*arguments: str) -> None:
+                subprocess.run(["git", *arguments], cwd=repo, check=True, capture_output=True)
+
+            try:
+                git("init", "-q")
+            except (OSError, subprocess.CalledProcessError):
+                self.skipTest("git unavailable")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "test")
+            (repo / "tracked.py").write_text("x = 1\n", encoding="utf-8")
+            git("add", "tracked.py")
+            git("commit", "-q", "-m", "init")
+
+            (repo / "notes.md").write_text("untracked\n", encoding="utf-8")
+            self.assertIs(metadata.git_revision(repo)["dirty"], False)
+
+            (repo / "tracked.py").write_text("x = 2\n", encoding="utf-8")
+            self.assertIs(metadata.git_revision(repo)["dirty"], True)
 
     def test_missing_git_is_reported_as_none(self) -> None:
         with mock.patch.object(metadata.subprocess, "run", side_effect=FileNotFoundError):
