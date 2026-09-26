@@ -139,6 +139,19 @@ HDF5 与队友验证过的官方示范同结构（`traj_N/obs, actions, success,
 
 **RGB 策略用 `obs_rgb/rgb` + `obs_rgb/state`，state 策略用 `obs`**（`obs` 含物体位姿）。`traj_N` 按种子排序，前 N 条即嵌套子集。
 
+### 相机视角：RGB 策略看到的画面
+
+![六个任务的相机视角](docs/camera_views.png)
+
+每行一个任务（各取第一条训练示范），左 3 列是固定相机 `base_camera`，右 3 列是腕部相机 `hand_camera`，各取开头、中间、结尾一帧（128×128，图中放大 2 倍）。
+
+- PickCube、PushCube、PullCube 只有 `base_camera`；StackCube、PegInsertionSide、PlugCharger 还有 `hand_camera`（`obs_rgb/rgb` 为 6 通道，前 3 通道是 `base_camera`）。
+- PullCube 的固定相机从另一侧看；PegInsertionSide 是贴近桌面的侧视角。
+- **PickCube 的目标点对相机不可见**，策略只能从 `obs_rgb/state` 里的 `goal_pos` 得知目标。
+- 物体在固定相机里很小（PlugCharger 的插头只有十几个像素），高精度任务要多靠腕部相机。
+
+这张图来自 9.25 的小规模冒烟数据（当时 PegInsertionSide、PlugCharger 用 `pd_ee_delta_pose`）；控制模式不影响相机和场景，画面与现在的 `pd_joint_pos` 数据相同。自己生成的数据可以看 `sample.png`（只有 `base_camera`）。
+
 ## 每个阶段做什么
 
 | 阶段 | 脚本 | 说明 |
