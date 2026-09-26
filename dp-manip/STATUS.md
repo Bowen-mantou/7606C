@@ -54,5 +54,13 @@
   三个 resolved config 只在 `policy.backbone` 上不同（Gate B），
   `tests/test_backbone_smoke.py` 对三个 backbone 逐一执行 forward/backward/
   optimizer step/sampling。
+- Phase 11 已建立 canonical backbone experiment 定义
+  `configs/experiments/backbone.toml`（轨道 B）：`variable = "policy.backbone"`、
+  `values = ["unet", "transformer", "mlp"]`，三个 arm 都使用种子 1–5；N_B 默认沿用
+  baseline 的 100 条，难任务按 `docs/final-plan.md` §6 的预注册规则在运行时改用 200 条；
+  `[diagnostics] train_eval_episodes = 25` 与 data-size grid 共用前 25 个训练 seed 的
+  过拟合诊断预算。`tests/test_config.py` 验证 spec 解析、未知 value 被拒绝，以及把
+  `policy.backbone` 归一后三个 arm 的 resolved config 完全相同（Gate B）；
+  `configs/README.md` 记录了解析方式和统一入口（Phase 12）前的等价覆盖命令。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

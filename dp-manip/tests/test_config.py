@@ -118,6 +118,39 @@ val_path = "val.h5"
         resolved = load(TASKS / "pickcube.toml", experiment=path, experiment_value=50)
         self.assertEqual(resolved.data.num_demos, 50)
 
+    def test_backbone_experiment_definition_and_resolution(self) -> None:
+        path = ROOT / "configs" / "experiments" / "backbone.toml"
+        spec = load_experiment(path)
+        self.assertEqual(spec.name, "backbone")
+        self.assertEqual(spec.variable, "policy.backbone")
+        self.assertEqual(spec.values, ("unet", "transformer", "mlp"))
+        for value in spec.values:
+            # Track B trains every arm with seeds 1-5 (docs/final-plan.md §6).
+            self.assertEqual(spec.seeds_for(value), (1, 2, 3, 4, 5))
+        # The overfitting diagnostic reuses the first 25 seeds shared by the
+        # data-size subsets and by both N_B choices.
+        self.assertEqual(spec.train_eval_episodes, 25)
+
+        with BASELINE.open("rb") as stream:
+            baseline_demos = tomllib.load(stream)["data"]["num_demos"]
+        normalized_arms = []
+        for value in spec.values:
+            resolved = load(TASKS / "pickcube.toml", experiment=path, experiment_value=value)
+            self.assertEqual(resolved.policy.backbone, value)
+            # N_B defaults to the canonical baseline size; hard tasks escalate
+            # to 200 through the pre-registered rule, not through this file.
+            self.assertEqual(resolved.data.num_demos, baseline_demos)
+            # Gate B: normalizing the declared variable must make every arm
+            # resolve to exactly the same config.
+            arm = resolved.to_dict()
+            arm["policy"]["backbone"] = spec.values[0]
+            normalized_arms.append(arm)
+        for arm in normalized_arms[1:]:
+            self.assertEqual(arm, normalized_arms[0])
+
+        with self.assertRaisesRegex(ValueError, "is not in experiment"):
+            load(TASKS / "pickcube.toml", experiment=path, experiment_value="banana")
+
     def test_invalid_diagnostics_are_rejected(self) -> None:
         spec = """
 [experiment]

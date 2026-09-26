@@ -22,6 +22,15 @@ baseline.toml
 只评估按 seed 升序的前 25 个训练 seed（所有嵌套子集共有），使过拟合诊断在不同 N 间可比；
 直接调用 `eval_dp.py --split train` 默认评估该 checkpoint 的全部训练 seed。
 
+轨道 B（模型结构）定义在 `experiments/backbone.toml`：`variable = "policy.backbone"`、
+`values = ["unet", "transformer", "mlp"]`，三个 arm 都使用训练种子 1–5。结构参数统一由
+`baseline.toml` 的 `policy.transformer_*` / `policy.mlp_*` 解析，因此三个 arm 的 resolved
+config 只在 `policy.backbone` 上不同。N_B 默认使用 baseline 的 `data.num_demos = 100`；
+六任务基线跑完后，UNet 在 100 条时成功率均值低于 0.10 的难任务按 `docs/final-plan.md` §6
+改用 200 条（运行时另加 `--num-demos 200`，unet arm 直接复用轨道 A 的 N=200 格子）。
+`[diagnostics] train_eval_episodes = 25` 与 data-size grid 相同，用于在共有的前 25 个训练
+seed 上做过拟合诊断。
+
 `data.num_demos=N` 固定选择按 `episode_seed` 升序排序后的前 N 条示范，与 HDF5 导出
 顺序和 `episode_id` 无关，因此 `25 ⊂ 50 ⊂ 100 ⊂ 200` 对任何导出结果都成立；
 `episode_id` 与 `episode_seed` 在同一 split 内必须唯一，重复会直接报错。
@@ -35,6 +44,16 @@ python scripts/train_dp.py \
   --config configs/tasks/pickcube.toml \
   --experiment configs/experiments/data_size.toml \
   --experiment-value 50
+```
+
+`backbone.toml` 的 value 是字符串，Phase 12 的统一入口会直接按 value 选择；在统一入口
+完成前，等价的运行时覆盖是：
+
+```bash
+python scripts/train_dp.py \
+  --config configs/tasks/pickcube.toml \
+  --set policy.backbone=transformer \
+  --seed 1
 ```
 
 `--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是最后应用的运行时覆盖。
