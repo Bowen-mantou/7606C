@@ -91,6 +91,12 @@ sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
 作业收到 Slurm 的 `USR1`/`TERM` 后会写 `checkpoints/resume.pt` 并以状态 75 退出；
 `train_array.sbatch` 随后 requeue，同一数组项自动续训。已存在 `final.pt` 的数组项会直接成功退出。
 
+`resume.pt` 除 model/optimizer/scheduler/EMA/scaler/step 外还保存 Python、NumPy、
+torch CPU 与 CUDA RNG state；训练 batch 由 `(seed, step)` 直接导出，因此 `resume` 后
+第 k 步的 batch 和噪声与连续训练的第 k 步一致，被抢占次数不影响随机轨迹。
+Phase 5 之前的旧 `resume.pt` 没有 `rng` 字段，仍可续训，但会打印一次 trajectory
+可能偏移的 warning。
+
 ## 产物
 
 ```text
@@ -115,9 +121,10 @@ runs/<task>_rgb_unet_n<N>_s<seed>/
 - `dp_manip/data.py`：demogen schema 校验、流式统计、HDF5 懒加载 temporal windows。
 - `dp_manip/vision.py`：不依赖 torchvision 的 GroupNorm ResNet-18 与随机平移增强。
 - `dp_manip/policy.py`：RGB 编码、归一化、条件 UNet、DDPM。
-- `scripts/train_dp.py`：可恢复的集群训练入口。
+- `scripts/train_dp.py`：可恢复的集群训练入口（RNG state + step-seeded batch sampler）。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
 - `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
+- `dp_manip/training.py`：EMA、RNG state 存取、`(seed, step)` 确定性 sampler、resume checkpoint 组装。
 - `baselines/phase0/pickcube_rgb.json`：重构前 RGB baseline 的机器可读 regression reference。
 - `docs/phase0-rgb-baseline.md`：Phase 0 行为清单、真实 smoke 结果和复现命令。
 - `PLAN.md`：数据量实验矩阵和运行口径。

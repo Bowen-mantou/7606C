@@ -12,4 +12,11 @@
   `episode_id`/`episode_seed`：`run.json` 记录 `data_selection.demo_seeds`，
   `tests/test_data_nesting.py` 验证 `25 ⊂ 50 ⊂ 100 ⊂ 200`，
   `inspect_dataset.py` 在提交前做同样预检。
-- 本机没有项目的 torch/ManiSkill 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
+- Phase 5 已让 `resume.pt`（format 3）保存/恢复 Python、NumPy、torch CPU/CUDA RNG
+  state，并把训练 batch 改为按 `(seed, step)` 确定性采样；`run.json` 记录
+  `sampler.scheme=step_seeded_with_replacement`，`tests/test_rng_resume.py` 验证
+  连续训练与被抢占续训的随机轨迹一致。已在本机 CPU 上用合成数据实测
+  `SIGUSR1 → resume.pt → 续训`：final EMA 权重与 raw model/optimizer state 均与
+  连续训练 bitwise 相同。旧 `resume.pt` 缺少 `rng` 字段时仍可续训并打印 warning。
+- 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
+  本机临时 venv 仅用于 `tests/test_rng_resume.py` 的 CPU 验证，不是项目环境。

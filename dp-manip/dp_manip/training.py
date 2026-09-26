@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import math
+import random
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator, Mapping
 
+import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import Sampler
 
 
 class ExponentialMovingAverage:
@@ -60,6 +63,123 @@ class ExponentialMovingAverage:
             name: value.to(device=parameters[name].device, dtype=parameters[name].dtype)
             for name, value in state["shadow"].items()
         }
+
+
+# Stable 63-bit mixers for deriving one sampler seed per optimizer step. Any
+# expression that depends only on ``(training seed, step)`` would work; fixed
+# odd multipliers avoid the correlation of the naive ``seed + step``.
+_BATCH_SEED_MULTIPLIER = 0x9E3779B97F4A7C15
+_STEP_SEED_MULTIPLIER = 0xBF58476D1CE4E5B9
+_SEED_MASK = (1 << 63) - 1
+
+
+def step_seed(seed: int, step: int) -> int:
+    """Return the deterministic sampler seed for one optimizer step."""
+    return (seed * _BATCH_SEED_MULTIPLIER + step * _STEP_SEED_MULTIPLIER) & _SEED_MASK
+
+
+class StepSeededIndexSampler(Sampler[int]):
+    """Draw with-replacement indices from a fresh per-step seed.
+
+    Slurm can preempt a run at any moment and DataLoader workers prefetch
+    batches beyond the last optimizer step, so a stateful ``RandomSampler``
+    cannot promise that a resumed run sees the same batch at the same step as a
+    continuous run. Deriving every batch from ``(seed, step)`` makes the index
+    stream a pure function of the step counter: the number of preemptions no
+    longer changes the stochastic trajectory.
+    """
+
+    def __init__(
+        self,
+        num_samples: int,
+        batch_size: int,
+        seed: int,
+        first_step: int,
+        last_step: int,
+    ):
+        if num_samples < 1:
+            raise ValueError("num_samples must be positive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if first_step < 1:
+            raise ValueError("first_step must be positive")
+        if last_step < first_step - 1:
+            raise ValueError("last_step must not precede first_step - 1")
+        self.num_samples = num_samples
+        self.batch_size = batch_size
+        self.seed = seed
+        self.first_step = first_step
+        self.last_step = last_step
+
+    def __iter__(self) -> Iterator[int]:
+        for step in range(self.first_step, self.last_step + 1):
+            generator = torch.Generator().manual_seed(step_seed(self.seed, step))
+            batch = torch.randint(self.num_samples, (self.batch_size,), generator=generator)
+            yield from batch.tolist()
+
+    def __len__(self) -> int:
+        return max(0, self.last_step - self.first_step + 1) * self.batch_size
+
+
+def rng_state() -> dict[str, Any]:
+    """Capture every RNG stream a training step can consume."""
+    state: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch_cpu": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def set_rng_state(state: Mapping[str, Any] | None) -> bool:
+    """Restore :func:`rng_state` output; return ``False`` when it is absent."""
+    if state is None:
+        return False
+    missing = [key for key in ("python", "numpy", "torch_cpu") if key not in state]
+    if missing:
+        raise ValueError(f"RNG state is missing required entries: {missing}")
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    # ``torch.load(map_location=device)`` may have moved the CPU byte tensors;
+    # set_rng_state expects them on the CPU even when resuming on a GPU.
+    torch.set_rng_state(state["torch_cpu"].cpu())
+    cuda_states = state.get("torch_cuda")
+    if cuda_states is not None:
+        if not torch.cuda.is_available():
+            raise RuntimeError("checkpoint contains CUDA RNG state but CUDA is unavailable")
+        torch.cuda.set_rng_state_all([value.cpu() for value in cuda_states])
+    return True
+
+
+def resume_checkpoint(
+    *,
+    config: dict[str, Any],
+    step: int,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: Any,
+    scaler: Any,
+    ema: ExponentialMovingAverage,
+) -> dict[str, Any]:
+    """Build the restartable checkpoint written by the training loop.
+
+    Unlike the inference checkpoints, this payload captures the full training
+    state including RNG streams, so a requeued run continues the trajectory of
+    a continuous run from the same optimizer step.
+    """
+    return {
+        "format_version": 3,
+        "config": config,
+        "step": step,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "scaler": scaler.state_dict(),
+        "ema": ema.state_dict(),
+        "rng": rng_state(),
+    }
 
 
 def cosine_warmup(step: int, *, warmup_steps: int, total_steps: int) -> float:

@@ -2,8 +2,11 @@
 """Train an RGB Diffusion Policy from ``maniskill-demogen`` datasets.
 
 The entry point is cluster-first: RGB is read lazily with worker processes,
-training is fixed to an optimizer-step budget, checkpoints are restartable,
-and no ManiSkill installation is needed until closed-loop evaluation.
+training is fixed to an optimizer-step budget, restartable checkpoints also
+carry Python/NumPy/torch RNG state, and no ManiSkill installation is needed
+until closed-loop evaluation. Batches are drawn per optimizer step from
+``(seed, step)`` so a Slurm requeue continues the same stochastic trajectory
+as a continuous run.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -35,9 +38,12 @@ from dp_manip.data import (  # noqa: E402
 from dp_manip.policy import DiffusionPolicy, load_policy_state_dict, num_params  # noqa: E402
 from dp_manip.training import (  # noqa: E402
     ExponentialMovingAverage,
+    StepSeededIndexSampler,
     atomic_torch_save,
     averaged_state_dict,
     cosine_warmup,
+    resume_checkpoint,
+    set_rng_state,
 )
 
 
@@ -265,22 +271,32 @@ def main() -> int:
         scaler.load_state_dict(resume["scaler"])
         ema.load_state_dict(resume["ema"], policy)
         start_step = int(resume["step"])
+        if set_rng_state(resume.get("rng")):
+            print("restored Python/NumPy/torch CPU/CUDA RNG state from resume.pt")
+        else:
+            print(
+                "warning: resume.pt predates RNG capture; the post-resume trajectory "
+                "will not match a continuous run"
+            )
         print(f"resuming {experiment} from optimizer step {start_step}")
     elif args.resume == "never" and any(run_dir.iterdir()):
         raise FileExistsError(f"{run_dir} is not empty")
 
-    remaining = cfg.train.total_iters - start_step
-    sampler_generator = torch.Generator().manual_seed(cfg.train.seed + start_step * 1_000_003)
-    sampler = RandomSampler(
-        train_dataset,
-        replacement=True,
-        num_samples=max(cfg.train.batch_size, remaining * cfg.train.batch_size),
-        generator=sampler_generator,
+    sampler = StepSeededIndexSampler(
+        len(train_dataset),
+        batch_size=cfg.train.batch_size,
+        seed=cfg.train.seed,
+        first_step=start_step + 1,
+        last_step=cfg.train.total_iters,
     )
+    # Worker seeds come from a dedicated generator rather than the global torch
+    # RNG, so constructing the loader cannot shift the restored stream.
+    worker_generator = torch.Generator().manual_seed(cfg.train.seed)
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg.train.batch_size,
         sampler=sampler,
+        generator=worker_generator,
         num_workers=cfg.train.num_workers,
         pin_memory=device.type == "cuda",
         persistent_workers=cfg.train.num_workers > 0,
@@ -311,6 +327,13 @@ def main() -> int:
         "normalization": stats.to_dict(),
         "num_train_windows": len(train_dataset),
         "num_val_windows": len(val_dataset),
+        # The sampler is derived from (seed, step) rather than from a stateful
+        # stream, so run-to-run audits can reproduce the demo order.
+        "sampler": {
+            "scheme": "step_seeded_with_replacement",
+            "seed": cfg.train.seed,
+            "batch_size": cfg.train.batch_size,
+        },
         "num_params": num_params(policy),
         "device": str(device),
         "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
@@ -337,16 +360,15 @@ def main() -> int:
 
     def save_resume(step: int) -> None:
         atomic_torch_save(
-            {
-                "format_version": 2,
-                "config": cfg.to_dict(),
-                "step": step,
-                "model": policy.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-                "scaler": scaler.state_dict(),
-                "ema": ema.state_dict(),
-            },
+            resume_checkpoint(
+                config=cfg.to_dict(),
+                step=step,
+                model=policy,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                ema=ema,
+            ),
             resume_path,
         )
 
