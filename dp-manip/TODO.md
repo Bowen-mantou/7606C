@@ -3,7 +3,8 @@
 1. 在集群登录节点运行 `./setup.sh`。
 2. 将 `maniskill-demogen/data/dataset` 放到共享存储，运行六任务 `inspect_dataset.py`。
 3. Phase 0 CPU 最小闭环已完成；仍需在兼容 GPU 上做 PickCube batch 64 短 smoke并记录峰值显存，
-   OOM 时全实验统一降 batch。
+   对 `unet` / `transformer` / `mlp` 三个 `policy.backbone` arm 各跑一次，
+   并走通对应 checkpoint 的闭环 evaluate；OOM 时全实验统一降 batch。
 4. 在集群验证 `USR1 → resume.pt → requeue` 一次：确认日志出现
    `restored Python/NumPy/torch CPU/CUDA RNG state`，并跑通
    `tests/test_rng_resume.py`（含 CUDA RNG）。
