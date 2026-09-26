@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Conditional N=400 tier: submit only for tasks whose N=100 -> 200 gain has not saturated.
 # The complete tier is 6 tasks × 5 seeds = 30; narrow --array when only some tasks qualify.
+# EXPERIMENT selects the grid (default: data-size N=400).
 #SBATCH --job-name=dp-rgb-n400
 #SBATCH --array=0-29%4
 #SBATCH --cpus-per-task=8
@@ -16,9 +17,10 @@ cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 : "${DATA_ROOT:?export DATA_ROOT=<maniskill-demogen data/dataset>}"
 RUN_ROOT=${RUN_ROOT:-runs}
 PYTHON=${PYTHON:-.venv/bin/python}
+EXPERIMENT=${EXPERIMENT:-configs/experiments/data_size_optional400.toml}
 
 "$PYTHON" scripts/sweep.py train \
-  --experiment configs/experiments/data_size_optional400.toml \
+  --experiment "$EXPERIMENT" \
   --index "$SLURM_ARRAY_TASK_ID" \
   --data-root "$DATA_ROOT" --output-root "$RUN_ROOT" &
 training_pid=$!
