@@ -85,6 +85,14 @@ class NestedSubsetTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "episode_id values must be unique"):
             read_dataset_info(self.path, 25)
 
+    def test_duplicate_seeds_are_rejected(self) -> None:
+        metadata = dict(self.metadata)
+        metadata["episodes"] = [dict(entry) for entry in self.metadata["episodes"]]
+        metadata["episodes"][1]["episode_seed"] = metadata["episodes"][0]["episode_seed"]
+        self.write_metadata(metadata)
+        with self.assertRaisesRegex(ValueError, "duplicate demonstration seeds: \\[199\\]"):
+            read_dataset_info(self.path, 25)
+
     def test_missing_seed_is_rejected(self) -> None:
         metadata = dict(self.metadata)
         metadata["episodes"] = [dict(entry) for entry in self.metadata["episodes"]]

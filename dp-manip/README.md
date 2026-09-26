@@ -45,7 +45,8 @@ traj_i/actions        float32 (T, A)
 使用 `5000–5049`，正式测试使用 `10000–10099`。
 
 `data.num_demos=N` 的选样规则是按 `episode_seed` 升序取前 N 条：同一数据池上
-`N1 < N2` 必有 `seeds(N1) ⊂ seeds(N2)`。实际选中的 seed 记录在 `run.json` 的
+`N1 < N2` 必有 `seeds(N1) ⊂ seeds(N2)`。同一 split 内 `episode_id` 和 `episode_seed`
+都必须唯一，重复会直接使数据检查失败。实际选中的 seed 记录在 `run.json` 的
 `data_selection` 字段中；`scripts/inspect_dataset.py` 会在提交作业前校验该嵌套不变量。
 
 ## 模型与公平性

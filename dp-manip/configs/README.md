@@ -19,7 +19,8 @@ baseline.toml
 `experiments/data_size_optional400.toml`，不属于正式 grid。
 
 `data.num_demos=N` 固定选择按 `episode_seed` 升序排序后的前 N 条示范，与 HDF5 导出
-顺序和 `episode_id` 无关，因此 `25 ⊂ 50 ⊂ 100 ⊂ 200` 对任何导出结果都成立。
+顺序和 `episode_id` 无关，因此 `25 ⊂ 50 ⊂ 100 ⊂ 200` 对任何导出结果都成立；
+`episode_id` 与 `episode_seed` 在同一 split 内必须唯一，重复会直接报错。
 `run.json` 的 `data_selection` 记录实际选中的 `demo_seeds`，
 `tests/test_data_nesting.py` 与 `scripts/inspect_dataset.py` 负责校验该不变量。
 

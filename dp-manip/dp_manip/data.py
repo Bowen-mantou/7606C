@@ -8,6 +8,7 @@ window, keeping large demonstration sets from consuming several GB of RAM.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -105,13 +106,16 @@ def _select_episode_entries(
     by demonstration seed makes every N-demo subset a prefix of every larger
     subset, so ``N1 < N2`` implies ``seeds(N1)`` is a subset of ``seeds(N2)``
     regardless of how the exporter numbered or listed the trajectories.
+    Demonstration seeds must be unique, otherwise the seed prefix is ambiguous.
     """
     episode_ids = [int(entry["episode_id"]) for entry in entries]
     if len(set(episode_ids)) != len(episode_ids):
         raise ValueError(f"{sidecar}: episode_id values must be unique")
-    ordered = sorted(
-        entries, key=lambda entry: (_episode_seed(entry, sidecar), int(entry["episode_id"]))
-    )
+    seeds = [_episode_seed(entry, sidecar) for entry in entries]
+    duplicate_seeds = sorted(seed for seed, count in Counter(seeds).items() if count > 1)
+    if duplicate_seeds:
+        raise ValueError(f"{sidecar}: duplicate demonstration seeds: {duplicate_seeds[:10]}")
+    ordered = sorted(entries, key=lambda entry: _episode_seed(entry, sidecar))
     if num_demos is None:
         return ordered
     if not 0 < num_demos <= len(ordered):
