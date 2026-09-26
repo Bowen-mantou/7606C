@@ -18,6 +18,11 @@ baseline.toml
 `data.num_demos` 为正整数。条件式 N=400 follow-up 单独放在
 `experiments/data_size_optional400.toml`，不属于正式 grid。
 
+`data.num_demos=N` 固定选择按 `episode_seed` 升序排序后的前 N 条示范，与 HDF5 导出
+顺序和 `episode_id` 无关，因此 `25 ⊂ 50 ⊂ 100 ⊂ 200` 对任何导出结果都成立。
+`run.json` 的 `data_selection` 记录实际选中的 `demo_seeds`，
+`tests/test_data_nesting.py` 与 `scripts/inspect_dataset.py` 负责校验该不变量。
+
 例如，解析 PickCube 的 N=50 数据量实验：
 
 ```bash

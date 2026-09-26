@@ -301,6 +301,13 @@ def main() -> int:
         "config": cfg.to_dict(),
         "train_data": dataset_record(train_info),
         "val_data": dataset_record(val_info),
+        # The data-size experiment compares nested subsets; record exactly which
+        # demonstrations were selected so a run can be audited after the fact.
+        "data_selection": {
+            "rule": "episode_seed_ascending_prefix",
+            "train": {"num_demos": len(train_info.episodes), "demo_seeds": train_info.seeds},
+            "val": {"num_demos": len(val_info.episodes), "demo_seeds": val_info.seeds},
+        },
         "normalization": stats.to_dict(),
         "num_train_windows": len(train_dataset),
         "num_val_windows": len(val_dataset),

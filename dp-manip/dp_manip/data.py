@@ -88,6 +88,37 @@ def export_info_path(path: Path) -> Path:
     return path.with_name(path.stem + ".export_info.json")
 
 
+def _episode_seed(entry: dict[str, Any], sidecar: Path) -> int:
+    seed = int(entry.get("episode_seed", entry.get("reset_kwargs", {}).get("seed", -1)))
+    if seed < 0:
+        raise ValueError(f"{sidecar}: episode {entry.get('episode_id')} has no reset seed")
+    return seed
+
+
+def _select_episode_entries(
+    entries: list[dict[str, Any]], sidecar: Path, num_demos: int | None
+) -> list[dict[str, Any]]:
+    """Return the canonical seed-ordered prefix used by data-size experiments.
+
+    Export order and ``episode_id`` are not demonstration identities: the same
+    seed pool may be re-exported with different trajectory numbering. Ordering
+    by demonstration seed makes every N-demo subset a prefix of every larger
+    subset, so ``N1 < N2`` implies ``seeds(N1)`` is a subset of ``seeds(N2)``
+    regardless of how the exporter numbered or listed the trajectories.
+    """
+    episode_ids = [int(entry["episode_id"]) for entry in entries]
+    if len(set(episode_ids)) != len(episode_ids):
+        raise ValueError(f"{sidecar}: episode_id values must be unique")
+    ordered = sorted(
+        entries, key=lambda entry: (_episode_seed(entry, sidecar), int(entry["episode_id"]))
+    )
+    if num_demos is None:
+        return ordered
+    if not 0 < num_demos <= len(ordered):
+        raise ValueError(f"requested {num_demos} demos, but {sidecar} contains {len(ordered)}")
+    return ordered[:num_demos]
+
+
 def read_dataset_info(path: str | Path, num_demos: int | None = None) -> DatasetInfo:
     """Validate an exported dataset and return lightweight episode metadata."""
     path = Path(path).resolve()
@@ -99,11 +130,7 @@ def read_dataset_info(path: str | Path, num_demos: int | None = None) -> Dataset
     meta = json.loads(sidecar.read_text(encoding="utf-8"))
     env_info = meta["env_info"]
     env_kwargs = env_info["env_kwargs"]
-    entries = sorted(meta["episodes"], key=lambda item: item["episode_id"])
-    if num_demos is not None:
-        if not 0 < num_demos <= len(entries):
-            raise ValueError(f"requested {num_demos} demos, but {path} contains {len(entries)}")
-        entries = entries[:num_demos]
+    entries = _select_episode_entries(meta["episodes"], sidecar, num_demos)
 
     episodes: list[EpisodeInfo] = []
     image_shape: tuple[int, int, int] | None = None
@@ -144,10 +171,9 @@ def read_dataset_info(path: str | Path, num_demos: int | None = None) -> Dataset
                 raise ValueError(f"{path}/{group_name}: observation or action dimensions changed between episodes")
             if "success" in group and not bool(group["success"][-1]):
                 raise ValueError(f"{path}/{group_name}: exported episode is not successful")
-            seed = int(entry.get("episode_seed", entry.get("reset_kwargs", {}).get("seed", -1)))
-            if seed < 0:
-                raise ValueError(f"{sidecar}: episode {episode_id} has no reset seed")
-            episodes.append(EpisodeInfo(group_name, episode_id, seed, len(actions)))
+            episodes.append(
+                EpisodeInfo(group_name, episode_id, _episode_seed(entry, sidecar), len(actions))
+            )
 
     if not episodes or image_shape is None or proprio_dim is None or action_dim is None:
         raise ValueError(f"{path}: no usable episodes")
