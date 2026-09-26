@@ -26,5 +26,13 @@
   share/per-camera encoder、policy 边界 flatten，以及旧 checkpoint
   （`image_encoders.*`、`state_*`/`proprio_*` → `observation_encoder.*`）仍可加载。
   本机 CPU 用合成数据实测 `train → save → load → get_action` 和 legacy-key resume 全部通过。
+- Phase 7 已引入统一 `NoisePredictor` 接口（`dp_manip/backbones/`）：`policy.backbone`
+  （baseline 默认 `"unet"`）经 registry 构建 backbone，policy 把 `(B, To, Dobs)`
+  observation 序列原样传入，flatten 只发生在 `UNetBackbone` 内部，encoder / trainer /
+  scheduler / EMA / evaluator 未变。`adapt_legacy_state_dict` 新增
+  `noise_pred_net.* → noise_predictor.unet.*` 映射，旧 checkpoint 仍可加载。
+  Phase 0 manifest 升到 schema version 2，仅新增结构选择器记录，不改任何超参。
+  本机 CPU 合成数据实测 train→save→load→get_action 与 legacy resume 通过，
+  loss 与 Phase 6 逐位一致。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

@@ -17,6 +17,10 @@ EMA, DDPM settings, batch size, training budget and evaluation seeds. The regres
 override changes only execution budget: 25 training demos, one validation demo, five
 optimizer steps, batch size one and two inference denoising steps.
 
+Phase 7 amended the manifest to schema version 2 by adding the structural selector
+`policy.backbone = "unet"` under `canonical_config.policy`. No scientific hyperparameter
+value changed; the selector only records which noise-prediction backbone is canonical.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

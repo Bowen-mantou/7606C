@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
-from .conditional_unet1d import ConditionalUnet1D
+from .backbones import build_noise_predictor
 from .config import DiffusionConfig, PolicyConfig, VisionConfig
 from .data import NormalizationStats
 from .observation_encoder import ObservationEncoder
@@ -42,16 +42,13 @@ class DiffusionPolicy(nn.Module):
             proprio_dim=proprio_dim,
             stats=stats,
         )
-        # The conditional UNet consumes one flat FiLM vector per sample. That
-        # flattening belongs to the backbone adapter, not to the observation
-        # encoder, which always returns ``(B, To, Dobs)``.
-        self.noise_pred_net = ConditionalUnet1D(
-            input_dim=action_dim,
-            global_cond_dim=policy_cfg.obs_horizon * self.observation_encoder.output_dim,
-            diffusion_step_embed_dim=policy_cfg.diffusion_step_embed_dim,
-            down_dims=policy_cfg.unet_dims,
-            kernel_size=policy_cfg.kernel_size,
-            n_groups=policy_cfg.n_groups,
+        # The backbone consumes the shared ``(B, To, Dobs)`` sequence and decides
+        # how to condition on it; the policy itself is backbone-agnostic.
+        self.noise_predictor = build_noise_predictor(
+            policy_cfg.backbone,
+            policy_cfg,
+            obs_dim=self.observation_encoder.output_dim,
+            action_dim=action_dim,
         )
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=diffusion_cfg.num_diffusion_iters,
@@ -72,10 +69,6 @@ class DiffusionPolicy(nn.Module):
         """Return shared observation features shaped ``(B, To, Dobs)``."""
         return self.observation_encoder(rgb, proprio)
 
-    def flatten_observation(self, rgb: torch.Tensor, proprio: torch.Tensor) -> torch.Tensor:
-        """Flatten ``(B, To, Dobs)`` features into UNet conditioning ``(B, To*Dobs)``."""
-        return self.observation_encoder(rgb, proprio).flatten(start_dim=1)
-
     def compute_loss(
         self,
         rgb: torch.Tensor,
@@ -84,7 +77,7 @@ class DiffusionPolicy(nn.Module):
         *,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
-        condition = self.flatten_observation(rgb, proprio)
+        obs_features = self.observation_features(rgb, proprio)
         actions = self.normalize_action(actions.to(dtype=torch.float32))
         noise = torch.randn(actions.shape, dtype=actions.dtype, device=actions.device, generator=generator)
         timesteps = torch.randint(
@@ -95,7 +88,7 @@ class DiffusionPolicy(nn.Module):
             generator=generator,
         )
         noisy_actions = self.noise_scheduler.add_noise(actions, noise, timesteps)
-        prediction = self.noise_pred_net(noisy_actions, timesteps, global_cond=condition)
+        prediction = self.noise_predictor(noisy_actions, timesteps, obs_features)
         return F.mse_loss(prediction, noise)
 
     @torch.no_grad()
@@ -107,7 +100,7 @@ class DiffusionPolicy(nn.Module):
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Return ``(B, act_horizon, action_dim)`` in the environment's units."""
-        condition = self.flatten_observation(rgb, proprio)
+        obs_features = self.observation_features(rgb, proprio)
         sample = torch.randn(
             (rgb.shape[0], self.pred_horizon, self.action_dim),
             device=rgb.device,
@@ -120,7 +113,7 @@ class DiffusionPolicy(nn.Module):
         self.noise_scheduler.alphas_cumprod = self.noise_scheduler.alphas_cumprod.to(rgb.device)
         self.noise_scheduler.one = self.noise_scheduler.one.to(rgb.device)
         for timestep in self.noise_scheduler.timesteps:
-            prediction = self.noise_pred_net(sample, timestep, global_cond=condition)
+            prediction = self.noise_predictor(sample, timestep, obs_features)
             sample = self.noise_scheduler.step(
                 prediction, timestep, sample, generator=generator
             ).prev_sample
@@ -133,12 +126,13 @@ def num_params(module: nn.Module) -> int:
 
 
 def adapt_legacy_state_dict(state_dict: Mapping[str, torch.Tensor]) -> dict:
-    """Map pre-ObservationEncoder keys onto the current module layout.
+    """Map pre-refactor keys onto the current module layout.
 
     Inference checkpoints, resume checkpoints, and EMA shadows written before
-    the encoder was extracted keep the camera weights under ``image_encoders.*``
-    and the proprio buffers at the top level; version-1 checkpoints used the
-    legacy ``state_*`` vocabulary.
+    the observation encoder was extracted keep the camera weights under
+    ``image_encoders.*`` and the proprio buffers at the top level; version-1
+    checkpoints used the legacy ``state_*`` vocabulary. Checkpoints written
+    before the backbone interface name the UNet directly as ``noise_pred_net``.
     """
     adapted = state_dict.copy()
     metadata = getattr(state_dict, "_metadata", None)
@@ -159,9 +153,14 @@ def adapt_legacy_state_dict(state_dict: Mapping[str, torch.Tensor]) -> dict:
         if canonical in adapted:
             raise ValueError(f"checkpoint contains both {key!r} and {canonical!r}")
         adapted[canonical] = adapted.pop(key)
+    for key in [key for key in adapted if key.startswith("noise_pred_net.")]:
+        canonical = "noise_predictor.unet." + key[len("noise_pred_net.") :]
+        if canonical in adapted:
+            raise ValueError(f"checkpoint contains both {key!r} and {canonical!r}")
+        adapted[canonical] = adapted.pop(key)
     return adapted
 
 
 def load_policy_state_dict(policy: DiffusionPolicy, state_dict: Mapping[str, torch.Tensor], *, strict: bool = True):
-    """Load a policy, adapting pre-ObservationEncoder checkpoint key names."""
+    """Load a policy, adapting pre-refactor checkpoint key names."""
     return policy.load_state_dict(adapt_legacy_state_dict(state_dict), strict=strict)

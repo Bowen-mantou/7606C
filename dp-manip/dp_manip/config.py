@@ -45,6 +45,10 @@ class PolicyConfig:
     unet_dims: list[int]
     kernel_size: int
     n_groups: int
+    # Structural selector, not a scientific hyperparameter. Defaults to the
+    # canonical UNet so checkpoints written before the backbone interface load
+    # unchanged.
+    backbone: str = "unet"
 
 
 @dataclass
@@ -112,6 +116,8 @@ class Config:
         ):
             raise ValueError("data.val_num_demos must be positive")
         policy = self.policy
+        if not isinstance(policy.backbone, str) or not policy.backbone:
+            raise ValueError("policy.backbone must be a non-empty string")
         if min(policy.obs_horizon, policy.act_horizon, policy.pred_horizon) < 1:
             raise ValueError("all horizons must be positive")
         if policy.obs_horizon + policy.act_horizon - 1 > policy.pred_horizon:

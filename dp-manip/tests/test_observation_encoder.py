@@ -1,9 +1,9 @@
 """Phase 6 regression tests: the shared observation boundary is ``(B, To, Dobs)``.
 
 The encoder owns RGB preprocessing, camera encoding, augmentation, and proprio
-normalization, and must stay independent of the noise-prediction backbone. The
-policy may flatten the sequence for the conditional UNet, but the encoder API
-itself never returns the flattened ``(B, To x Dobs)`` form.
+normalization, and must stay independent of the noise-prediction backbone. Only
+the backbone adapter may flatten the sequence; the encoder API never returns the
+flattened ``(B, To x Dobs)`` form.
 """
 
 from __future__ import annotations
@@ -110,15 +110,13 @@ class PolicyEncoderBoundaryTest(unittest.TestCase):
             stats=make_stats(5, 4),
         )
 
-    def test_policy_exposes_sequence_features_before_flattening(self) -> None:
+    def test_policy_exposes_the_shared_sequence(self) -> None:
         policy = self.make_policy().eval()
         rgb = torch.randint(0, 256, (3, 2, 6, 32, 32), dtype=torch.uint8)
         proprio = torch.randn(3, 2, 5)
         features = policy.observation_features(rgb, proprio)
-        flat = policy.flatten_observation(rgb, proprio)
         self.assertEqual(features.shape, (3, 2, 2 * 8 + 5))
-        self.assertEqual(flat.shape, (3, 2 * (2 * 8 + 5)))
-        self.assertTrue(torch.equal(flat, features.flatten(start_dim=1)))
+        self.assertTrue(torch.equal(features, policy.observation_encoder(rgb, proprio)))
 
     def test_loss_and_sampling_use_the_encoder(self) -> None:
         policy = self.make_policy()
@@ -136,8 +134,9 @@ class PolicyEncoderBoundaryTest(unittest.TestCase):
     def test_pre_encoder_checkpoint_keys_still_load(self) -> None:
         policy = self.make_policy()
         current = policy.state_dict()
-        # Reproduce the pre-extraction layout: camera weights at the top level
-        # and version-1 ``state_*`` proprio buffers.
+        # Reproduce the pre-extraction observation layout: camera weights at the
+        # top level and version-1 ``state_*`` proprio buffers. (The backbone
+        # rename is covered in tests/test_backbone_interface.py.)
         legacy = {
             key[len("observation_encoder.") :] if key.startswith("observation_encoder.") else key: value
             for key, value in current.items()

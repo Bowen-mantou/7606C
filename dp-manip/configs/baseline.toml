@@ -13,6 +13,7 @@ random_shift = 4
 share_camera_encoder = true
 
 [policy]
+backbone = "unet"
 obs_horizon = 2
 act_horizon = 8
 pred_horizon = 16
