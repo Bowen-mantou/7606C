@@ -82,7 +82,25 @@ sbatch --export=ALL,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
 sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
 ```
 
-单次训练也可以直接运行：
+统一实验入口（所有实验共用同一个 trainer，只换 config）：
+
+```bash
+.venv/bin/python scripts/run_experiment.py \
+  --task pickcube --experiment data_size --value 50 --seed 1 \
+  --data-root "$DATA_ROOT"
+
+.venv/bin/python scripts/run_experiment.py \
+  --task pickcube --experiment backbone --value transformer --seed 1 \
+  --data-root "$DATA_ROOT"
+```
+
+`--task` / `--experiment` 接受 `configs/tasks`、`configs/experiments` 下的短名或显式路径；
+`--value` 按 experiment spec 声明的类型解析（整数 N 或 backbone 名），`--seed`、`--num-demos`
+（难任务轨道 B 的 N_B）、`--data-root` 是运行时覆盖。入口本身没有按 experiment 名称的分支，
+新实验只需新增 config。
+
+Slurm sweep 走 `scripts/train_dp.py`；两个入口最终都调用
+`dp_manip/trainer.py::run_training`，所以不会出现第二套 trainer：
 
 ```bash
 .venv/bin/python scripts/train_dp.py \
@@ -127,7 +145,9 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
 - `dp_manip/backbones/`：`NoisePredictor` 接口、`policy.backbone` 注册表、包装 canonical UNet
   的 `UNetBackbone` 与从 VariDP 迁移的 `TransformerBackbone`、`MLPBackbone`。
 - `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor。
-- `scripts/train_dp.py`：可恢复的集群训练入口（RNG state + step-seeded batch sampler）。
+- `dp_manip/trainer.py`：唯一训练 pipeline（resume、采样器、日志、checkpoint、评估 loss）。
+- `scripts/run_experiment.py`：统一实验入口 `--task/--experiment/--value/--seed`，只解析 config。
+- `scripts/train_dp.py`：Slurm sweep 用的薄 CLI，与统一入口共用 `dp_manip.trainer`。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
 - `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
 - `dp_manip/training.py`：EMA、RNG state 存取、`(seed, step)` 确定性 sampler、resume checkpoint 组装。

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Train an RGB Diffusion Policy from ``maniskill-demogen`` datasets.
+"""Unified experiment entry point: task + experiment + value + seed.
 
-This is the sweep/Slurm entry point: it resolves a task config plus an optional
-experiment grid value and hands the result to the single trainer in
-``dp_manip.trainer``. The unified task/experiment/value entry point is
-``scripts/run_experiment.py``; both share the same training pipeline.
+```bash
+python scripts/run_experiment.py --task pickcube --experiment data_size --value 50 --seed 0
+python scripts/run_experiment.py --task pickcube --experiment backbone --value transformer --seed 0
+```
 
-Training is cluster-first: RGB is read lazily with worker processes, the run is
-fixed to an optimizer-step budget, restartable checkpoints also carry
-Python/NumPy/torch RNG state, and no ManiSkill installation is needed until
-closed-loop evaluation. Batches are drawn per optimizer step from
-``(seed, step)`` so a Slurm requeue continues the same stochastic trajectory as
-a continuous run.
+``--task`` and ``--experiment`` accept the short names declared in
+``configs/tasks`` and ``configs/experiments`` (or explicit paths). The entry
+point only resolves the canonical config layering and delegates to the single
+trainer in ``dp_manip.trainer``; there is deliberately no per-experiment
+branch, so a new experiment is a config file, never a new pipeline.
 """
 
 from __future__ import annotations
@@ -27,16 +26,20 @@ from dp_manip import config as config_lib  # noqa: E402
 from dp_manip.config import Config  # noqa: E402
 
 
+TASKS_DIR = ROOT / "configs" / "tasks"
+EXPERIMENTS_DIR = ROOT / "configs" / "experiments"
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", required=True, type=Path, help="task-only config")
-    parser.add_argument("--experiment", type=Path, help="experiment specification or override TOML")
-    parser.add_argument("--experiment-value", help="selected value from an experiment grid")
+    parser.add_argument("--task", required=True, help="task name in configs/tasks or a task config path")
+    parser.add_argument("--experiment", required=True, help="experiment name in configs/experiments or a spec path")
+    parser.add_argument("--value", required=True, help="one declared value of the experiment grid")
+    parser.add_argument("--seed", type=int, help="training seed; default: baseline train.seed")
+    parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
     parser.add_argument("--data-root", type=Path, help="override data.root (for example, a scratch dataset directory)")
     parser.add_argument("--output-root", type=Path, default=ROOT / "runs")
     parser.add_argument("--exp", help="run directory name; default: <task>_rgb_<backbone>_n<N>_s<seed>")
-    parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
-    parser.add_argument("--seed", type=int)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--resume", choices=("auto", "never"), default="auto")
     parser.add_argument(
@@ -50,13 +53,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def resolve_path(name: str, directory: Path, kind: str) -> Path:
+    path = Path(name)
+    if path.is_file():
+        return path
+    candidate = directory / f"{name}.toml"
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(f"unknown {kind} {name!r}; expected {candidate} or an existing path")
+
+
 def resolve_config(args: argparse.Namespace) -> Config:
-    """Resolve the layered config plus this invocation's runtime overrides."""
+    """Resolve baseline -> task -> experiment(value) -> runtime seed/data."""
     cfg = config_lib.load(
-        args.config,
+        resolve_path(args.task, TASKS_DIR, "task"),
         args.overrides,
-        experiment=args.experiment,
-        experiment_value=args.experiment_value,
+        experiment=resolve_path(args.experiment, EXPERIMENTS_DIR, "experiment"),
+        experiment_value=args.value,
     )
     if args.num_demos is not None:
         cfg.data.num_demos = args.num_demos
@@ -71,6 +84,11 @@ def resolve_config(args: argparse.Namespace) -> Config:
 def main() -> int:
     args = parse_args()
     cfg = resolve_config(args)
+    print(
+        f"{args.experiment}={args.value} seed={cfg.train.seed} backbone={cfg.policy.backbone} "
+        f"num_demos={cfg.data.num_demos} device={args.device}",
+        flush=True,
+    )
     # Imported late so config resolution stays importable without the heavy
     # torch training stack (the same reason both entry points share it).
     from dp_manip.trainer import run_training

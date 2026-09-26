@@ -46,15 +46,15 @@ python scripts/train_dp.py \
   --experiment-value 50
 ```
 
-`backbone.toml` 的 value 是字符串，Phase 12 的统一入口会直接按 value 选择；在统一入口
-完成前，等价的运行时覆盖是：
+`backbone.toml` 的 value 是字符串，统一入口直接按 value 选择：
 
 ```bash
-python scripts/train_dp.py \
-  --config configs/tasks/pickcube.toml \
-  --set policy.backbone=transformer \
-  --seed 1
+python scripts/run_experiment.py \
+  --task pickcube --experiment backbone --value transformer --seed 1
 ```
+
+`--value` 对 data_size 同样适用（`--experiment data_size --value 50`），字符串形式会匹配
+spec 里声明的整数；`scripts/train_dp.py --experiment-value` 也接受同样的字符串。
 
 `--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是最后应用的运行时覆盖。
 集群上可用 `--data-root` 覆盖数据根目录。临时 smoke 可用

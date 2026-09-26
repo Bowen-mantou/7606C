@@ -361,6 +361,21 @@ def load_experiment(path: str | Path) -> ExperimentSpec:
     )
 
 
+def match_experiment_value(spec: ExperimentSpec, value: Any) -> Any:
+    """Return the declared grid value selected by a CLI string.
+
+    ``--value`` arrives as text, so ``"50"`` must select the declared integer
+    ``50`` and ``"transformer"`` the declared string. Matching on the string
+    form keeps the data-size and backbone grids on one entry point.
+    """
+    for declared in spec.values:
+        if declared == value or str(declared) == str(value):
+            return declared
+    raise ValueError(
+        f"value {value!r} is not in experiment {spec.name!r}: {list(spec.values)}"
+    )
+
+
 def _resolve_legacy_task(path: Path, raw: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     if set(raw) != {"legacy"}:
         return path, raw
@@ -426,10 +441,7 @@ def load(
                 spec = load_experiment(experiment_path)
                 if experiment_value is None:
                     raise ValueError(f"experiment {spec.name!r} requires an experiment value")
-                if experiment_value not in spec.values:
-                    raise ValueError(
-                        f"value {experiment_value!r} is not in experiment {spec.name!r}: {list(spec.values)}"
-                    )
+                experiment_value = match_experiment_value(spec, experiment_value)
                 experiment_layer: dict[str, Any] = {}
                 _set_dotted(experiment_layer, spec.variable, experiment_value)
             else:

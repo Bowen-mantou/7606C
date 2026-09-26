@@ -62,6 +62,17 @@
   `[diagnostics] train_eval_episodes = 25` 与 data-size grid 共用前 25 个训练 seed 的
   过拟合诊断预算。`tests/test_config.py` 验证 spec 解析、未知 value 被拒绝，以及把
   `policy.backbone` 归一后三个 arm 的 resolved config 完全相同（Gate B）；
-  `configs/README.md` 记录了解析方式和统一入口（Phase 12）前的等价覆盖命令。
+  `configs/README.md` 记录了解析方式和统一入口的调用方式。
+- Phase 12 已建立统一实验入口 `scripts/run_experiment.py`（`--task` / `--experiment` /
+  `--value` / `--seed`）：它只按 canonical 分层解析 config，然后调用唯一的训练 pipeline
+  `dp_manip/trainer.py::run_training`。`config.load` 现在会把 CLI 字符串值匹配到 experiment
+  spec 声明的类型，所以整数 data-size 与字符串 backbone 共用同一个入口；入口内没有任何按
+  experiment 名称的分支，新实验只需新增 config（测试用临时 spec 验证）。`scripts/train_dp.py`
+  缩成同一 trainer 的薄 CLI，继续供 `sweep.py`/Slurm 使用，训练循环逐行未变。
+  `tests/test_run_experiment.py` 验证 value 匹配、两类实验的解析、与 sweep cell 和旧 CLI 的
+  resolved config 完全一致，以及未知 task/experiment/value 被拒绝。本机 CPU 合成数据实测
+  data_size N=25 与 backbone unet/transformer/mlp 三 arm 均经统一入口完成
+  train→save→resume→load→get_action，三个 backbone run config 只在 `policy.backbone`
+  上不同（Gate B）。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。
