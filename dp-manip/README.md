@@ -161,7 +161,7 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
 - `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor。
 - `dp_manip/trainer.py`：唯一训练 pipeline（resume、采样器、日志、checkpoint、评估 loss）。
 - `scripts/run_experiment.py`：统一实验入口 `--task/--experiment/--value/--seed`，只解析 config。
-- `scripts/check_experiment.py`：Gate B checker：对比实验矩阵的 resolved config，输出 `control_hash`。
+- `scripts/check_experiment.py`：Gate B checker：对比实验矩阵的 resolved config（`--run-root` 时对比实际 `run.json`），输出 `control_hash`。
 - `scripts/train_dp.py`：Slurm sweep 用的薄 CLI，与统一入口共用 `dp_manip.trainer`。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
 - `scripts/sweep.py`、`slurm/`：任意 experiment spec 的数组作业（data-size 96 组、backbone 90 组、条件 N=400）。

@@ -11,11 +11,13 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-from dp_manip.config import load, load_experiment
+from dp_manip.config import default_run_name, load, load_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "configs" / "tasks"
@@ -133,6 +135,84 @@ class MatrixCheckTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
             status = checker.main(["--experiment", "data_size", "--task", "pickcube", "--seed", "9"])
         self.assertEqual(status, 1)
+
+    def test_structural_keys_are_only_allowed_in_the_backbone_experiment(self) -> None:
+        structural = {"policy.unet_dims", "policy.mlp_hidden_dim", "policy.transformer_layers"}
+        backbone = self.checker.allowed_keys(load_experiment(EXPERIMENTS / "backbone.toml"))
+        data_size = self.checker.allowed_keys(load_experiment(EXPERIMENTS / "data_size.toml"))
+        self.assertTrue(structural <= backbone)
+        self.assertFalse(structural & data_size)
+
+        cells = [
+            self.cell("100 s1", "train.seed=1"),
+            self.cell("200 s1", "train.seed=1", "data.num_demos=200", "policy.unet_dims=[128, 256]"),
+        ]
+        drifts = self.checker.check_cells(cells, data_size)
+        self.assertEqual([drift.key for drift in drifts], ["policy.unet_dims"])
+
+    def test_run_root_checks_the_recorded_configs(self) -> None:
+        checker = load_checker()
+        spec = load_experiment(EXPERIMENTS / "backbone.toml")
+        declared = checker.matrix_cells(TASKS / "pickcube.toml", EXPERIMENTS / "backbone.toml", spec, seed=1)
+
+        def write_runs(root: Path, edits: dict[str, dict[str, dict]] = {}, skip: tuple[str, ...] = ()):
+            for cell in declared:
+                if cell.label in skip:
+                    continue
+                raw = cell.config.to_dict()
+                raw["data"]["root"] = "/scratch/somewhere"  # runtime path, never drift
+                for section, values in edits.get(cell.label, {}).items():
+                    raw[section].update(values)
+                run_dir = root / default_run_name(cell.config)
+                run_dir.mkdir(parents=True)
+                (run_dir / "run.json").write_text(json.dumps({"config": raw}), encoding="utf-8")
+
+        def run(root: Path) -> tuple[int, str]:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                status = checker.main(
+                    ["--experiment", "backbone", "--task", "pickcube", "--seed", "1", "--run-root", str(root)]
+                )
+            return status, output.getvalue()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_runs(root)
+            status, output = run(root)
+            self.assertEqual(status, 0, output)
+            self.assertIn("3 cells ok", output)
+
+        # An OOM workaround on one arm is exactly the drift the declaration
+        # check cannot see: it only exists in that run's run.json.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_runs(root, {"transformer s1": {"train": {"batch_size": 32}}})
+            status, output = run(root)
+            self.assertEqual(status, 1)
+            self.assertIn("run.json differs from the declared config", output)
+            self.assertIn("Unexpected experiment config drift", output)
+            self.assertIn("transformer s1 run.json = 32", output)
+
+        # A baseline changed after every run finished leaves the arms mutually
+        # consistent but stale against the current declaration.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stale = {"train": {"lr": 3e-4}}
+            write_runs(root, {label: stale for label in ("unet s1", "transformer s1", "mlp s1")})
+            status, output = run(root)
+            self.assertEqual(status, 1)
+            self.assertIn("train.lr:", output)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_runs(root, skip=("mlp s1",))
+            status, output = run(root)
+            self.assertEqual(status, 0, output)
+            self.assertIn("2/3 cells have run.json; not run: mlp s1", output)
+
+        with tempfile.TemporaryDirectory() as directory:
+            status, _ = run(Path(directory))
+            self.assertEqual(status, 1)
 
     def test_cli_reports_unknown_task_and_experiment(self) -> None:
         checker = load_checker()

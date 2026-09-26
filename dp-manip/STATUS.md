@@ -82,6 +82,8 @@
   必须相同）。`dp_manip.config.resolve_config_path` 抽出了入口共用的 name-or-path 解析。
   `tests/test_check_experiment.py` 覆盖 diff/prune/control_hash、真实三套矩阵
   （data_size / data_size_optional400 / backbone，六任务共 216 cells）、drift 报告格式与
-  CLI 退出码；本机实测三套矩阵全部 `Gate B ok`。
+  CLI 退出码；本机实测三套矩阵全部 `Gate B ok`。验收时补充：结构键豁免只在
+  `policy.backbone` 实验生效；`--run-root` 读取各 cell 的 `run.json`，与其他 cell 和当前
+  声明对比，并列出尚未运行的 cell（本机用带 `--set` 缩小预算的合成 run 实测能检出）。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

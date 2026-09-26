@@ -10,12 +10,20 @@ diffusion, horizons, vision, evaluation) is reported as experiment drift.
 ```bash
 python scripts/check_experiment.py --experiment backbone
 python scripts/check_experiment.py --experiment data_size --task pickcube --seed 1
+python scripts/check_experiment.py --experiment backbone --run-root /scratch/$USER/dp-runs
 ```
 
-The exit status is non-zero when unexpected drift is found, so the same check
-can run before formal cluster experiments (REFACTOR_PLAN.md §3.5). Every cell
-also gets a ``control_hash`` over its non-experimental values (§19); all cells
-of a task matrix must share it.
+Without ``--run-root`` the check resolves the declared cells from the current
+config files, which is the pre-submission check (REFACTOR_PLAN.md §3.5). With
+``--run-root`` it reads the config each finished or running cell actually
+trained with from ``<run-root>/<run name>/run.json``. That is where real drift
+lives: runs submitted under an older ``baseline.toml``, or with a runtime
+``--set``/``--num-demos``. Recorded configs are compared with each other and
+with the current declaration; cells without ``run.json`` are listed as not run.
+
+The exit status is non-zero when unexpected drift is found. Every cell also
+gets a ``control_hash`` over its non-experimental values (§19); all cells of a
+task matrix must share it.
 """
 
 from __future__ import annotations
@@ -43,10 +51,11 @@ EXPERIMENTS_DIR = ROOT / "configs" / "experiments"
 SEED_KEY = "train.seed"
 RUNTIME_KEYS = frozenset({"data.root"})
 
-# Architecture definitions of the three arms (docs/final-plan.md §6). Allowing
-# them to differ keeps supplementary capacity-matched arms (for example
-# ``--set policy.mlp_hidden_dim=1024``) comparable; they never carry scientific
-# settings.
+# Architecture definitions of the three arms (docs/final-plan.md §6). They may
+# differ only inside the backbone experiment, where they belong to the declared
+# variable (the plan's ``policy.backbone.*``), e.g. a supplementary
+# capacity-matched arm. In any other experiment they are ordinary controls.
+BACKBONE_VARIABLE = "policy.backbone"
 STRUCTURAL_KEYS = frozenset(
     {
         "policy.unet_dims",
@@ -99,12 +108,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, help="restrict to one declared replicate seed")
     parser.add_argument("--data-root", type=Path, help="runtime override for data.root")
     parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
+    parser.add_argument(
+        "--run-root",
+        type=Path,
+        help="check the configs recorded in <run-root>/<run name>/run.json instead of the declaration",
+    )
     return parser.parse_args(argv)
 
 
 def allowed_keys(spec: ExperimentSpec) -> set[str]:
     """Keys that may differ between cells of this experiment without drift."""
-    return {spec.variable, SEED_KEY, *STRUCTURAL_KEYS, *RUNTIME_KEYS}
+    allowed = {spec.variable, SEED_KEY, *RUNTIME_KEYS}
+    if spec.variable == BACKBONE_VARIABLE:
+        allowed |= STRUCTURAL_KEYS
+    return allowed
 
 
 def config_differences(
@@ -167,6 +184,35 @@ def matrix_cells(
     return cells
 
 
+def recorded_cells(
+    declared: Sequence[Cell], run_root: Path
+) -> tuple[list[Cell], list[Drift], list[str]]:
+    """Load the config each declared cell actually trained with.
+
+    Returns the recorded cells, every difference between a recorded config and
+    its current declaration (runtime keys excepted), and the labels of cells
+    whose run directory has no ``run.json`` yet.
+    """
+    recorded: list[Cell] = []
+    mismatches: list[Drift] = []
+    missing: list[str] = []
+    for cell in declared:
+        path = run_root / config_lib.default_run_name(cell.config) / "run.json"
+        if not path.is_file():
+            missing.append(cell.label)
+            continue
+        raw = json.loads(path.read_text(encoding="utf-8"))["config"]
+        config = config_lib.from_dict(raw)
+        recorded.append(Cell(cell.label, config))
+        differences = config_differences(cell.config.to_dict(), config.to_dict())
+        for key, (declared_value, recorded_value) in differences.items():
+            if key not in RUNTIME_KEYS:
+                mismatches.append(
+                    Drift(key, "declared", declared_value, f"{cell.label} run.json", recorded_value)
+                )
+    return recorded, mismatches, missing
+
+
 def check_cells(cells: Sequence[Cell], allowed: set[str]) -> list[Drift]:
     """Compare every cell against the first; return unexpected differences."""
     if not cells:
@@ -185,12 +231,14 @@ def check_cells(cells: Sequence[Cell], allowed: set[str]) -> list[Drift]:
     return drifts
 
 
-def format_drifts(task_name: str, drifts: Sequence[Drift]) -> str:
+def format_drifts(
+    task_name: str, drifts: Sequence[Drift], title: str = "Unexpected experiment config drift"
+) -> str:
     """Render the per-key matrix from the plan's example."""
     grouped: dict[str, list[Drift]] = {}
     for drift in drifts:
         grouped.setdefault(drift.key, []).append(drift)
-    lines = [f"ERROR: Unexpected experiment config drift in {task_name}", ""]
+    lines = [f"ERROR: {title} in {task_name}", ""]
     for key, entries in sorted(grouped.items()):
         lines.append(f"{key}:")
         reference = entries[0]
@@ -222,19 +270,30 @@ def main(argv: list[str] | None = None) -> int:
     total_cells = 0
     for task_path in task_paths:
         cells = matrix_cells(task_path, experiment_path, spec, seed=args.seed, overrides=overrides)
-        if len(cells) < 2:
-            print(f"{task_path.stem}: fewer than two cells selected; skipping")
+        mismatches: list[Drift] = []
+        if args.run_root is not None:
+            declared_count = len(cells)
+            cells, mismatches, missing = recorded_cells(cells, args.run_root.expanduser())
+            if missing:
+                print(
+                    f"{task_path.stem}: {len(cells)}/{declared_count} cells have run.json; "
+                    f"not run: {', '.join(missing)}"
+                )
+        if mismatches:
+            print(format_drifts(task_path.stem, mismatches, "run.json differs from the declared config"))
+        if not cells:
+            failures += bool(mismatches)
             continue
         total_cells += len(cells)
         drifts = check_cells(cells, allowed)
         hashes = {control_hash(cell.config, allowed) for cell in cells}
+        failures += bool(mismatches or drifts or len(hashes) != 1)
         if drifts or len(hashes) != 1:
-            failures += 1
             if drifts:
                 print(format_drifts(task_path.stem, drifts))
             else:
                 print(f"ERROR: control_hash differs within {task_path.stem}: {sorted(hashes)}")
-        else:
+        elif not mismatches:
             print(f"{task_path.stem}: {len(cells)} cells ok, control_hash={next(iter(hashes))[:12]}")
     if failures:
         print(f"Gate B FAILED: {failures} task(s) drift", file=sys.stderr)
