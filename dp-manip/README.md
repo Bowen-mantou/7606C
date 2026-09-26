@@ -80,6 +80,16 @@ sbatch --export=ALL,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
 
 # 5. 全部 final.pt 完成后，固定测试种子做闭环评估
 sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
+
+# 6. 轨道 B（backbone，90 项）：用 EXPERIMENT 选择 spec，--array 按 sweep.py show 的条数设置。
+#    unet 格子与 data-size N=100 同目录，等第 4 步的 N=100 完成后再提交，完成的格子会直接跳过。
+.venv/bin/python scripts/sweep.py show --experiment configs/experiments/backbone.toml
+sbatch --array=0-89%4 \
+  --export=ALL,EXPERIMENT=configs/experiments/backbone.toml,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
+  slurm/train_array.sbatch
+sbatch --array=0-89%4 \
+  --export=ALL,EXPERIMENT=configs/experiments/backbone.toml,RUN_ROOT=/scratch/$USER/dp-runs \
+  slurm/eval_array.sbatch
 ```
 
 统一实验入口（所有实验共用同一个 trainer，只换 config）：
@@ -149,7 +159,7 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
 - `scripts/run_experiment.py`：统一实验入口 `--task/--experiment/--value/--seed`，只解析 config。
 - `scripts/train_dp.py`：Slurm sweep 用的薄 CLI，与统一入口共用 `dp_manip.trainer`。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
-- `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
+- `scripts/sweep.py`、`slurm/`：任意 experiment spec 的数组作业（data-size 96 组、backbone 90 组、条件 N=400）。
 - `dp_manip/training.py`：EMA、RNG state 存取、`(seed, step)` 确定性 sampler、resume checkpoint 组装。
 - `baselines/phase0/pickcube_rgb.json`：重构前 RGB baseline 的机器可读 regression reference。
 - `docs/phase0-rgb-baseline.md`：Phase 0 行为清单、真实 smoke 结果和复现命令。

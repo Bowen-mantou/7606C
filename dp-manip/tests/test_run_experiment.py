@@ -77,7 +77,7 @@ class RunExperimentResolutionTest(unittest.TestCase):
         run = next(
             run
             for run in sweep.runs(sweep.DEFAULT_EXPERIMENT)
-            if run.task == "pickcube" and run.num_demos == 50 and run.seed == 2
+            if run.task == "pickcube" and run.value == 50 and run.seed == 2
         )
         unified = self.resolve(
             "--task", "pickcube", "--experiment", "data_size", "--value", "50", "--seed", "2"

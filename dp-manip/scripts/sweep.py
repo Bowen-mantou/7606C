@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ DEFAULT_EXPERIMENT = ROOT / "configs" / "experiments" / "data_size.toml"
 @dataclass(frozen=True)
 class Run:
     task: str
-    num_demos: int
+    value: Any  # the declared grid value, e.g. 50 or "transformer"
     seed: int
     experiment: Path
 
@@ -51,7 +52,7 @@ class Run:
             self.config,
             [f"train.seed={self.seed}"],
             experiment=self.experiment,
-            experiment_value=self.num_demos,
+            experiment_value=self.value,
         )
 
     @property
@@ -61,12 +62,8 @@ class Run:
 
 def runs(experiment_path: Path = DEFAULT_EXPERIMENT) -> list[Run]:
     spec: ExperimentSpec = load_experiment(experiment_path)
-    cells = tuple(
-        (int(value), seed)
-        for value in spec.values
-        for seed in spec.seeds_for(value)
-    )
-    return [Run(task, num_demos, seed, experiment_path) for task in TASKS for num_demos, seed in cells]
+    cells = tuple((value, seed) for value in spec.values for seed in spec.seeds_for(value))
+    return [Run(task, value, seed, experiment_path) for task in TASKS for value, seed in cells]
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,7 +98,7 @@ def build_command(args: argparse.Namespace, run: Run) -> list[str]:
             "--experiment",
             str(run.experiment),
             "--experiment-value",
-            str(run.num_demos),
+            str(run.value),
             "--seed",
             str(run.seed),
             "--exp",

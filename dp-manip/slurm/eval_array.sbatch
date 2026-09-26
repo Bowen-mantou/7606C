@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Evaluate the core grid on the fixed held-out test seeds using CPU physics and GPU RGB inference/rendering.
 # Override CHECKPOINT=step_010000.pt and SPLIT=val for training-curve diagnostics.
+# EXPERIMENT selects the grid (default: data-size, 96 runs); for the backbone grid use
+#   sbatch --array=0-89%4 --export=ALL,EXPERIMENT=configs/experiments/backbone.toml slurm/eval_array.sbatch
 #SBATCH --job-name=dp-rgb-eval
 #SBATCH --array=0-95%4
 #SBATCH --cpus-per-task=8
@@ -16,6 +18,7 @@ PYTHON=${PYTHON:-.venv/bin/python}
 CHECKPOINT=${CHECKPOINT:-final.pt}
 SPLIT=${SPLIT:-test}
 NUM_ENVS=${NUM_ENVS:-4}
+EXPERIMENT=${EXPERIMENT:-configs/experiments/data_size.toml}
 
-"$PYTHON" scripts/sweep.py eval --index "$SLURM_ARRAY_TASK_ID" \
+"$PYTHON" scripts/sweep.py eval --experiment "$EXPERIMENT" --index "$SLURM_ARRAY_TASK_ID" \
   --output-root "$RUN_ROOT" --checkpoint "$CHECKPOINT" --split "$SPLIT" --num-envs "$NUM_ENVS"
