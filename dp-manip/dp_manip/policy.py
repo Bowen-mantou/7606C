@@ -61,13 +61,13 @@ class DiffusionPolicy(nn.Module):
             clip_sample=True,
             prediction_type="epsilon",
         )
-        self.register_buffer("state_mean", torch.as_tensor(stats.state_mean))
-        self.register_buffer("state_std", torch.as_tensor(stats.state_std))
+        self.register_buffer("proprio_mean", torch.as_tensor(stats.proprio_mean))
+        self.register_buffer("proprio_std", torch.as_tensor(stats.proprio_std))
         self.register_buffer("action_low", torch.as_tensor(stats.action_low))
         self.register_buffer("action_high", torch.as_tensor(stats.action_high))
 
-    def normalize_state(self, state: torch.Tensor) -> torch.Tensor:
-        return ((state - self.state_mean) / self.state_std).clamp(-10.0, 10.0)
+    def normalize_proprio(self, proprio: torch.Tensor) -> torch.Tensor:
+        return ((proprio - self.proprio_mean) / self.proprio_std).clamp(-10.0, 10.0)
 
     def normalize_action(self, action: torch.Tensor) -> torch.Tensor:
         return 2.0 * (action - self.action_low) / (self.action_high - self.action_low) - 1.0
@@ -75,10 +75,12 @@ class DiffusionPolicy(nn.Module):
     def unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
         return (action + 1.0) * 0.5 * (self.action_high - self.action_low) + self.action_low
 
-    def encode_observation(self, rgb: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+    def encode_observation(self, rgb: torch.Tensor, proprio: torch.Tensor) -> torch.Tensor:
         """Return flattened conditioning from ``(B,To,3C,H,W)`` and ``(B,To,P)``."""
-        if rgb.ndim != 5 or state.ndim != 3:
-            raise ValueError(f"expected RGB/state histories, got {tuple(rgb.shape)} and {tuple(state.shape)}")
+        if rgb.ndim != 5 or proprio.ndim != 3:
+            raise ValueError(
+                f"expected RGB/proprio histories, got {tuple(rgb.shape)} and {tuple(proprio.shape)}"
+            )
         batch, horizon, channels, height, width = rgb.shape
         if horizon != self.obs_horizon or channels != self.num_cameras * 3:
             raise ValueError(f"unexpected RGB history shape {tuple(rgb.shape)}")
@@ -94,18 +96,18 @@ class DiffusionPolicy(nn.Module):
             encoded = [encoder(by_camera[:, index]) for index, encoder in enumerate(self.image_encoders)]
             features = torch.stack(encoded, dim=1).reshape(batch * horizon * self.num_cameras, -1)
         features = features.reshape(batch, horizon, -1)
-        state = self.normalize_state(state.to(dtype=torch.float32))
-        return torch.cat((features, state), dim=-1).flatten(start_dim=1)
+        proprio = self.normalize_proprio(proprio.to(dtype=torch.float32))
+        return torch.cat((features, proprio), dim=-1).flatten(start_dim=1)
 
     def compute_loss(
         self,
         rgb: torch.Tensor,
-        state: torch.Tensor,
+        proprio: torch.Tensor,
         actions: torch.Tensor,
         *,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
-        condition = self.encode_observation(rgb, state)
+        condition = self.encode_observation(rgb, proprio)
         actions = self.normalize_action(actions.to(dtype=torch.float32))
         noise = torch.randn(actions.shape, dtype=actions.dtype, device=actions.device, generator=generator)
         timesteps = torch.randint(
@@ -123,12 +125,12 @@ class DiffusionPolicy(nn.Module):
     def get_action(
         self,
         rgb: torch.Tensor,
-        state: torch.Tensor,
+        proprio: torch.Tensor,
         *,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Return ``(B, act_horizon, action_dim)`` in the environment's units."""
-        condition = self.encode_observation(rgb, state)
+        condition = self.encode_observation(rgb, proprio)
         sample = torch.randn(
             (rgb.shape[0], self.pred_horizon, self.action_dim),
             device=rgb.device,
@@ -151,3 +153,19 @@ class DiffusionPolicy(nn.Module):
 
 def num_params(module: nn.Module) -> int:
     return sum(parameter.numel() for parameter in module.parameters())
+
+
+def load_policy_state_dict(policy: DiffusionPolicy, state_dict: dict, *, strict: bool = True):
+    """Load a policy, adapting version-1 proprio buffer names if present."""
+    adapted = state_dict.copy()
+    if hasattr(state_dict, "_metadata"):
+        adapted._metadata = state_dict._metadata
+    for legacy, canonical in (
+        ("state_mean", "proprio_mean"),
+        ("state_std", "proprio_std"),
+    ):
+        if legacy in adapted:
+            if canonical in adapted:
+                raise ValueError(f"checkpoint contains both {legacy!r} and {canonical!r}")
+            adapted[canonical] = adapted.pop(legacy)
+    return policy.load_state_dict(adapted, strict=strict)

@@ -45,7 +45,7 @@ def main() -> None:
             print(
                 f"PASS {cfg.task.env_id}: train {len(train.episodes)} demos/{train.num_transitions} steps; "
                 f"val {len(val.episodes)}; RGB {train.image_shape} {list(train.cameras)}; "
-                f"state {train.proprio_dim}; action {train.action_dim} ({train.control_mode}); "
+                f"proprio {train.proprio_dim}; action {train.action_dim} ({train.control_mode}); "
                 f"action range [{stats.action_low.min():.3f}, {stats.action_high.max():.3f}]"
             )
         except Exception as error:

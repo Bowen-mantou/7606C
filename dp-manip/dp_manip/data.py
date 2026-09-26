@@ -52,21 +52,35 @@ class DatasetInfo:
 
 @dataclass(frozen=True)
 class NormalizationStats:
-    state_mean: np.ndarray
-    state_std: np.ndarray
+    proprio_mean: np.ndarray
+    proprio_std: np.ndarray
     action_low: np.ndarray
     action_high: np.ndarray
 
     def to_dict(self) -> dict[str, list[float]]:
         return {
-            "state_mean": self.state_mean.tolist(),
-            "state_std": self.state_std.tolist(),
+            "proprio_mean": self.proprio_mean.tolist(),
+            "proprio_std": self.proprio_std.tolist(),
             "action_low": self.action_low.tolist(),
             "action_high": self.action_high.tolist(),
         }
 
     @classmethod
     def from_dict(cls, raw: dict[str, list[float]]) -> "NormalizationStats":
+        # Version-1 checkpoints used ``state_*`` for non-privileged
+        # proprioception. Keep that vocabulary confined to this adapter.
+        raw = dict(raw)
+        for legacy, canonical in (
+            ("state_mean", "proprio_mean"),
+            ("state_std", "proprio_std"),
+        ):
+            if legacy in raw:
+                if canonical in raw:
+                    raise ValueError(f"normalization contains both {legacy!r} and {canonical!r}")
+                raw[canonical] = raw.pop(legacy)
+        expected = {"proprio_mean", "proprio_std", "action_low", "action_high"}
+        if set(raw) != expected:
+            raise ValueError(f"normalization keys must be {sorted(expected)}, got {sorted(raw)}")
         return cls(**{key: np.asarray(value, dtype=np.float32) for key, value in raw.items()})
 
 
@@ -106,14 +120,19 @@ def read_dataset_info(path: str | Path, num_demos: int | None = None) -> Dataset
                 if key not in group:
                     raise ValueError(f"{path}/{group_name}: missing {key}; use maniskill-demogen export output")
             images = group["obs_rgb/rgb"]
-            state = group["obs_rgb/state"]
+            proprio = group["obs_rgb/state"]
             actions = group["actions"]
             if images.dtype != np.uint8 or images.ndim != 4 or images.shape[-1] % 3:
                 raise ValueError(f"{images.name}: expected uint8 (T+1,H,W,3*C), got {images.dtype} {images.shape}")
-            if state.ndim != 2 or actions.ndim != 2 or len(state) != len(actions) + 1 or len(images) != len(actions) + 1:
+            if (
+                proprio.ndim != 2
+                or actions.ndim != 2
+                or len(proprio) != len(actions) + 1
+                or len(images) != len(actions) + 1
+            ):
                 raise ValueError(f"{path}/{group_name}: RGB/state/actions are not aligned as T+1/T")
             current_image_shape = tuple(int(value) for value in images.shape[1:])
-            current_proprio_dim = int(state.shape[1])
+            current_proprio_dim = int(proprio.shape[1])
             current_action_dim = int(actions.shape[1])
             if image_shape is None:
                 image_shape, proprio_dim, action_dim = current_image_shape, current_proprio_dim, current_action_dim
@@ -161,32 +180,32 @@ def read_dataset_info(path: str | Path, num_demos: int | None = None) -> Dataset
 def compute_normalization(info: DatasetInfo, epsilon: float = 1e-3) -> NormalizationStats:
     """Compute proprioception z-score and action min/max from training demos only."""
     count = 0
-    state_sum = np.zeros(info.proprio_dim, dtype=np.float64)
-    state_sq_sum = np.zeros(info.proprio_dim, dtype=np.float64)
+    proprio_sum = np.zeros(info.proprio_dim, dtype=np.float64)
+    proprio_sq_sum = np.zeros(info.proprio_dim, dtype=np.float64)
     action_low = np.full(info.action_dim, np.inf, dtype=np.float64)
     action_high = np.full(info.action_dim, -np.inf, dtype=np.float64)
     with h5py.File(info.path, "r") as file:
         for episode in info.episodes:
             group = file[episode.group]
-            state = np.asarray(group["obs_rgb/state"][: episode.length], dtype=np.float64)
+            proprio = np.asarray(group["obs_rgb/state"][: episode.length], dtype=np.float64)
             actions = np.asarray(group["actions"], dtype=np.float64)
-            if not (np.isfinite(state).all() and np.isfinite(actions).all()):
-                raise ValueError(f"{info.path}/{episode.group}: non-finite state or action")
-            count += len(state)
-            state_sum += state.sum(axis=0)
-            state_sq_sum += np.square(state).sum(axis=0)
+            if not (np.isfinite(proprio).all() and np.isfinite(actions).all()):
+                raise ValueError(f"{info.path}/{episode.group}: non-finite proprio or action")
+            count += len(proprio)
+            proprio_sum += proprio.sum(axis=0)
+            proprio_sq_sum += np.square(proprio).sum(axis=0)
             action_low = np.minimum(action_low, actions.min(axis=0))
             action_high = np.maximum(action_high, actions.max(axis=0))
-    mean = state_sum / count
-    variance = np.maximum(state_sq_sum / count - np.square(mean), 0.0)
+    mean = proprio_sum / count
+    variance = np.maximum(proprio_sq_sum / count - np.square(mean), 0.0)
     std = np.sqrt(variance)
     std[std < epsilon] = 1.0
     flat = action_high - action_low < 1e-4
     center = (action_high + action_low) / 2
     action_low[flat], action_high[flat] = center[flat] - 1.0, center[flat] + 1.0
     return NormalizationStats(
-        state_mean=mean.astype(np.float32),
-        state_std=std.astype(np.float32),
+        proprio_mean=mean.astype(np.float32),
+        proprio_std=std.astype(np.float32),
         action_low=action_low.astype(np.float32),
         action_high=action_high.astype(np.float32),
     )
@@ -228,7 +247,7 @@ class RGBWindowDataset(Dataset):
         obs_indices = np.arange(timestep - self.obs_horizon + 1, timestep + 1)
         obs_indices = np.clip(obs_indices, 0, episode.length)
         images = self._read_frames(group["obs_rgb/rgb"], obs_indices)
-        state = self._read_frames(group["obs_rgb/state"], obs_indices).astype(np.float32)
+        proprio = self._read_frames(group["obs_rgb/state"], obs_indices).astype(np.float32)
         images = np.transpose(images, (0, 3, 1, 2))
 
         action_indices = np.arange(
@@ -237,7 +256,7 @@ class RGBWindowDataset(Dataset):
         )
         clipped = np.clip(action_indices, 0, episode.length - 1)
         actions = self._read_frames(group["actions"], clipped).astype(np.float32)
-        return {"rgb": images, "state": state, "actions": actions}
+        return {"rgb": images, "proprio": proprio, "actions": actions}
 
     def close(self) -> None:
         if self._file is not None:
@@ -245,9 +264,9 @@ class RGBWindowDataset(Dataset):
             self._file = None
 
     def __getstate__(self) -> dict[str, Any]:
-        state = self.__dict__.copy()
-        state["_file"] = None
-        return state
+        attributes = self.__dict__.copy()
+        attributes["_file"] = None
+        return attributes
 
     def __del__(self) -> None:
         self.close()

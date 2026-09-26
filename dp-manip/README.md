@@ -49,7 +49,7 @@ traj_i/actions        float32 (T, A)
 - 每帧视觉特征与 `obs_rgb/state` 的非特权 proprioception 拼接，再把两帧历史输入条件 1D UNet。
 - 动作预测/执行 horizon 为 `16/8`，DDPM 训练和推理均为 100 步。
 - 所有任务、N 和训练种子固定 100k optimizer steps；RGB batch 默认为 64。
-- state z-score 与 action min/max **只用当前 N 条训练示范**计算。
+- proprio z-score 与 action min/max **只用当前 N 条训练示范**计算。
 - 验证去噪 loss 使用独立的 50 条验证示范；主结果只用 `final.pt`，不按 loss 挑 checkpoint。
 - 闭环评估固定 `physx_cpu`，与数据生成后端一致；策略推理仍在 CUDA 上。
 

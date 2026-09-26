@@ -18,7 +18,7 @@ from dp_manip.config import from_dict  # noqa: E402
 from dp_manip.data import NormalizationStats  # noqa: E402
 from dp_manip.envs import make_eval_envs  # noqa: E402
 from dp_manip.evaluate import evaluate  # noqa: E402
-from dp_manip.policy import DiffusionPolicy  # noqa: E402
+from dp_manip.policy import DiffusionPolicy, load_policy_state_dict  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,7 +51,7 @@ def main() -> None:
         action_dim=int(train_data["action_dim"]),
         stats=stats,
     ).to(device)
-    policy.load_state_dict(checkpoint["model"])
+    load_policy_state_dict(policy, checkpoint["model"])
     policy.eval()
 
     if args.split == "test":

@@ -32,7 +32,7 @@ from dp_manip.data import (  # noqa: E402
     compute_normalization,
     read_dataset_info,
 )
-from dp_manip.policy import DiffusionPolicy, num_params  # noqa: E402
+from dp_manip.policy import DiffusionPolicy, load_policy_state_dict, num_params  # noqa: E402
 from dp_manip.training import (  # noqa: E402
     ExponentialMovingAverage,
     atomic_torch_save,
@@ -133,7 +133,7 @@ def validate(
                 batch = move_batch(batch, device)
                 with torch.amp.autocast(device.type, enabled=amp):
                     loss = policy.compute_loss(
-                        batch["rgb"], batch["state"], batch["actions"], generator=generator
+                        batch["rgb"], batch["proprio"], batch["actions"], generator=generator
                     )
                 count = batch["rgb"].shape[0]
                 total_loss += loss.detach().item() * count
@@ -152,7 +152,7 @@ def inference_payload(
     step: int,
 ) -> dict:
     return {
-        "format_version": 1,
+        "format_version": 2,
         "model": averaged_state_dict(policy, ema),
         "config": cfg.to_dict(),
         "train_data": dataset_record(train_info),
@@ -259,7 +259,7 @@ def main() -> int:
         resume = torch.load(resume_path, map_location=device, weights_only=False)
         if config_lib.from_dict(resume["config"]).to_dict() != cfg.to_dict():
             raise ValueError("resume checkpoint config differs from this invocation")
-        policy.load_state_dict(resume["model"])
+        load_policy_state_dict(policy, resume["model"])
         optimizer.load_state_dict(resume["optimizer"])
         scheduler.load_state_dict(resume["scheduler"])
         scaler.load_state_dict(resume["scaler"])
@@ -331,7 +331,7 @@ def main() -> int:
     def save_resume(step: int) -> None:
         atomic_torch_save(
             {
-                "format_version": 1,
+                "format_version": 2,
                 "config": cfg.to_dict(),
                 "step": step,
                 "model": policy.state_dict(),
@@ -357,7 +357,7 @@ def main() -> int:
         batch = move_batch(batch, device)
         optimizer.zero_grad(set_to_none=True)
         with torch.amp.autocast(device.type, enabled=use_amp):
-            loss = policy.compute_loss(batch["rgb"], batch["state"], batch["actions"])
+            loss = policy.compute_loss(batch["rgb"], batch["proprio"], batch["actions"])
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.train.grad_clip)
