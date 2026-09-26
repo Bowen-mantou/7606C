@@ -29,6 +29,10 @@ transformer_dropout_emb = 0.0
 transformer_dropout_attn = 0.3
 transformer_causal_attn = true
 transformer_cond_layers = 0
+# MLP backbone structure (donor: VariDP local baseline).
+mlp_hidden_dim = 256
+mlp_layers = 3
+mlp_time_embed_dim = 128
 
 [train]
 seed = 1

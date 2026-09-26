@@ -34,3 +34,18 @@ class SinusoidalPosEmb(nn.Module):
         )
         arguments = timesteps.float()[:, None] * frequencies[None]
         return torch.cat([arguments.sin(), arguments.cos()], dim=-1)
+
+
+def expand_timesteps(timestep, batch_size: int, device: torch.device) -> torch.Tensor:
+    """Broadcast an int or 0-dim tensor diffusion step to ``(batch_size,)``.
+
+    The DDPM trainer passes ``(B,)`` steps, while the sampling loop iterates
+    over 0-dim scheduler steps; both reach the backbones through the same
+    contract. The UNet and Transformer networks expand internally; the MLP uses
+    this helper.
+    """
+    if not torch.is_tensor(timestep):
+        timestep = torch.tensor([timestep], dtype=torch.long, device=device)
+    elif timestep.ndim == 0:
+        timestep = timestep[None].to(device)
+    return timestep.expand(batch_size)

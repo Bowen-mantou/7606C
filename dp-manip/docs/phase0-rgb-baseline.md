@@ -26,6 +26,10 @@ structure (`policy.transformer_layers/heads/embed_dim/dropout_emb/dropout_attn/
 causal_attn/cond_layers`) migrated from VariDP. The fields are architecture definitions,
 not scientific hyperparameters, and every arm resolves the same baseline values.
 
+Phase 10 amended the manifest to schema version 4 by recording the donor MLP structure
+(`policy.mlp_hidden_dim/mlp_layers/mlp_time_embed_dim`) migrated from VariDP, again
+without changing any scientific hyperparameter.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

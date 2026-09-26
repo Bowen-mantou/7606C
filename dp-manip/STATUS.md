@@ -44,5 +44,15 @@
   结构字段，不改任何科学超参。本机 CPU 合成数据实测 transformer arm 的
   train→save→resume→load→get_action 通过，`tests/test_backbone_smoke.py` 覆盖
   forward/backward/optimizer step/sampling。
+- Phase 10 已从 VariDP 迁移 MLP backbone（`dp_manip/backbones/mlp.py`）：忠实移植
+  VariDP 本地 baseline 的 `MLPNoisePred`（展平动作 ‖ 时间嵌入 ‖ 展平观测 → 3 层
+  Mish/LayerNorm MLP），时间嵌入移入 backbone 以保持统一的原始 timestep contract，
+  观测条件直接使用共享 encoder 的 `(B, To, Dobs)` flatten，不再像 VariDP 那样另建
+  observation MLP。结构参数 `policy.mlp_*` 来自 `baseline.toml`。Phase 0 manifest 升到
+  schema version 4，仅新增 MLP 结构字段，不改任何科学超参。本机 CPU 合成数据实测
+  unet/transformer/mlp 三个 arm 的 train→save→resume→load→get_action 全部通过；
+  三个 resolved config 只在 `policy.backbone` 上不同（Gate B），
+  `tests/test_backbone_smoke.py` 对三个 backbone 逐一执行 forward/backward/
+  optimizer step/sampling。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

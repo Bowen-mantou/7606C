@@ -61,6 +61,9 @@ class PolicyConfig:
     transformer_dropout_attn: float = 0.3
     transformer_causal_attn: bool = True
     transformer_cond_layers: int = 0
+    mlp_hidden_dim: int = 256
+    mlp_layers: int = 3
+    mlp_time_embed_dim: int = 128
 
 
 @dataclass
@@ -148,6 +151,10 @@ class Config:
                 raise ValueError(f"policy.{name} must be in [0, 1)")
         if policy.transformer_cond_layers < 0:
             raise ValueError("policy.transformer_cond_layers must be non-negative")
+        if policy.mlp_hidden_dim < 1 or policy.mlp_layers < 1:
+            raise ValueError("policy.mlp_hidden_dim and policy.mlp_layers must be positive")
+        if policy.mlp_time_embed_dim < 2 or policy.mlp_time_embed_dim % 2:
+            raise ValueError("policy.mlp_time_embed_dim must be an even positive number")
         if min(policy.obs_horizon, policy.act_horizon, policy.pred_horizon) < 1:
             raise ValueError("all horizons must be positive")
         if policy.obs_horizon + policy.act_horizon - 1 > policy.pred_horizon:

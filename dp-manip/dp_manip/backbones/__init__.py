@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from ..config import PolicyConfig
 from .base import NoisePredictor
+from .mlp import MLPBackbone
 from .transformer import TransformerBackbone
 from .unet import UNetBackbone
 
 _BACKBONES: dict[str, type[NoisePredictor]] = {
     "unet": UNetBackbone,
     "transformer": TransformerBackbone,
+    "mlp": MLPBackbone,
 }
 
 
@@ -30,4 +32,10 @@ def build_noise_predictor(
     return backbone(policy_cfg, obs_dim=obs_dim, action_dim=action_dim)
 
 
-__all__ = ["NoisePredictor", "TransformerBackbone", "UNetBackbone", "build_noise_predictor"]
+__all__ = [
+    "MLPBackbone",
+    "NoisePredictor",
+    "TransformerBackbone",
+    "UNetBackbone",
+    "build_noise_predictor",
+]

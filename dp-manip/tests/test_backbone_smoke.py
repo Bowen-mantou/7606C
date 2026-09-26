@@ -23,7 +23,7 @@ else:
 
 @unittest.skipUnless(HAVE_TORCH, "requires the cluster torch environment")
 class BackboneSmokeTest(unittest.TestCase):
-    BACKBONES = ("unet", "transformer")
+    BACKBONES = ("unet", "transformer", "mlp")
 
     def test_one_train_step_then_one_sampling_pass(self) -> None:
         for name in self.BACKBONES:

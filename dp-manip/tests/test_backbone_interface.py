@@ -18,11 +18,13 @@ try:
     import torch
 
     from dp_manip.backbones import (
+        MLPBackbone,
         NoisePredictor,
         TransformerBackbone,
         UNetBackbone,
         build_noise_predictor,
     )
+    from dp_manip.backbones.timestep import SinusoidalPosEmb, expand_timesteps
     from dp_manip.data import NormalizationStats
     from dp_manip.policy import DiffusionPolicy, load_policy_state_dict
 except ModuleNotFoundError:  # torch is only installed in the cluster environment
@@ -98,6 +100,7 @@ class NoisePredictorInterfaceTest(unittest.TestCase):
     BACKBONES = (
         ("unet", UNetBackbone),
         ("transformer", TransformerBackbone),
+        ("mlp", MLPBackbone),
     )
 
     def test_factory_builds_the_declared_backbone(self) -> None:
@@ -129,6 +132,7 @@ class NoisePredictorInterfaceTest(unittest.TestCase):
         cases = (
             (UNetBackbone, {"unet_dims": [16, 32]}, {"unet_dims": [32, 64]}),
             (TransformerBackbone, {"transformer_layers": 1}, {"transformer_layers": 2}),
+            (MLPBackbone, {"mlp_hidden_dim": 16}, {"mlp_hidden_dim": 64}),
         )
         for backbone_cls, small_overrides, large_overrides in cases:
             with self.subTest(backbone=backbone_cls.__name__):
@@ -138,6 +142,21 @@ class NoisePredictorInterfaceTest(unittest.TestCase):
                     sum(parameter.numel() for parameter in small.parameters()),
                     sum(parameter.numel() for parameter in large.parameters()),
                 )
+
+
+@unittest.skipUnless(HAVE_TORCH, "requires the cluster torch environment")
+class TimestepEmbeddingTest(unittest.TestCase):
+    def test_sinusoidal_embedding_shape(self) -> None:
+        embedding = SinusoidalPosEmb(8)(torch.tensor([0, 1, 2]))
+        self.assertEqual(embedding.shape, (3, 8))
+        self.assertTrue(torch.isfinite(embedding).all())
+
+    def test_expand_timesteps_accepts_int_scalar_and_vector(self) -> None:
+        expected = torch.tensor([7, 7, 7], dtype=torch.long)
+        for value in (7, torch.tensor(7), torch.tensor([7])):
+            with self.subTest(value=value):
+                actual = expand_timesteps(value, 3, torch.device("cpu"))
+                self.assertTrue(torch.equal(actual, expected))
 
 
 @unittest.skipUnless(HAVE_TORCH, "requires the cluster torch environment")
@@ -204,7 +223,7 @@ class BackboneConfigTest(unittest.TestCase):
         # Gate B: switching arms must not move a single scientific or structural
         # value; only ``policy.backbone`` may change.
         base = load(ROOT / "configs" / "tasks" / "pickcube.toml").to_dict()
-        for name in ("transformer",):
+        for name in ("transformer", "mlp"):
             with self.subTest(backbone=name):
                 arm = load(
                     ROOT / "configs" / "tasks" / "pickcube.toml",
@@ -222,6 +241,9 @@ class BackboneConfigTest(unittest.TestCase):
             "transformer_dropout_attn",
             "transformer_causal_attn",
             "transformer_cond_layers",
+            "mlp_hidden_dim",
+            "mlp_layers",
+            "mlp_time_embed_dim",
         ):
             del raw["policy"][name]
         policy = from_dict(raw).policy
@@ -232,6 +254,9 @@ class BackboneConfigTest(unittest.TestCase):
         self.assertEqual(policy.transformer_dropout_attn, 0.3)
         self.assertTrue(policy.transformer_causal_attn)
         self.assertEqual(policy.transformer_cond_layers, 0)
+        self.assertEqual(policy.mlp_hidden_dim, 256)
+        self.assertEqual(policy.mlp_layers, 3)
+        self.assertEqual(policy.mlp_time_embed_dim, 128)
 
     def test_invalid_transformer_structure_is_rejected(self) -> None:
         for override in (
@@ -242,6 +267,16 @@ class BackboneConfigTest(unittest.TestCase):
             "policy.transformer_cond_layers=-1",
         ):
             with self.subTest(override=override), self.assertRaisesRegex(ValueError, "policy.transformer"):
+                load(ROOT / "configs" / "tasks" / "pickcube.toml", [override])
+
+    def test_invalid_mlp_structure_is_rejected(self) -> None:
+        for override in (
+            "policy.mlp_layers=0",
+            "policy.mlp_hidden_dim=0",
+            "policy.mlp_time_embed_dim=7",
+            "policy.mlp_time_embed_dim=1",
+        ):
+            with self.subTest(override=override), self.assertRaisesRegex(ValueError, "policy.mlp"):
                 load(ROOT / "configs" / "tasks" / "pickcube.toml", [override])
 
     def test_pre_interface_checkpoint_config_defaults_to_unet(self) -> None:
