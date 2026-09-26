@@ -74,6 +74,7 @@ class TrainConfig:
     batch_size: int
     num_workers: int
     lr: float
+    betas: list[float]
     weight_decay: float
     warmup_steps: int
     grad_clip: float
@@ -175,11 +176,31 @@ class Config:
         for step in [*train.validation_steps, *train.checkpoint_steps]:
             if step < 1:
                 raise ValueError(f"intermediate step {step} must be positive")
+        if train.lr <= 0.0:
+            raise ValueError("train.lr must be positive")
+        betas = train.betas
+        if (
+            not isinstance(betas, (list, tuple))
+            or len(betas) != 2
+            or any(
+                isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value < 1.0
+                for value in betas
+            )
+        ):
+            raise ValueError("train.betas must be two numbers in [0, 1)")
+        if train.weight_decay < 0.0:
+            raise ValueError("train.weight_decay must be non-negative")
+        if train.grad_clip <= 0.0:
+            raise ValueError("train.grad_clip must be positive")
+        if train.num_workers < 0 or train.warmup_steps < 0:
+            raise ValueError("train.num_workers and train.warmup_steps must be non-negative")
         if not 0.0 <= self.ema.decay < 1.0:
             raise ValueError("ema.decay must be in [0, 1)")
         evaluation = self.eval
         if evaluation.val_episodes < 1 or evaluation.test_episodes < 1 or evaluation.num_envs < 1:
             raise ValueError("evaluation counts must be positive")
+        if min(evaluation.val_seed_start, evaluation.test_seed_start, evaluation.inference_seed) < 0:
+            raise ValueError("evaluation seeds must be non-negative")
         if set(self.val_seeds()) & set(self.test_seeds()):
             raise ValueError("validation and test rollout seed ranges overlap")
 
@@ -469,6 +490,10 @@ def load(
                 experiment_layer: dict[str, Any] = {}
                 _set_dotted(experiment_layer, spec.variable, experiment_value)
             else:
+                if experiment_value is not None:
+                    raise ValueError(
+                        "experiment_value requires an experiment spec with an [experiment] table"
+                    )
                 experiment_layer = experiment_raw
         raw = _deep_merge(raw, experiment_layer)
 

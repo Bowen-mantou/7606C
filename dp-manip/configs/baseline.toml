@@ -42,6 +42,7 @@ total_iters = 100000
 batch_size = 64
 num_workers = 8
 lr = 1e-4
+betas = [0.95, 0.999]
 weight_decay = 1e-6
 warmup_steps = 500
 grad_clip = 1.0

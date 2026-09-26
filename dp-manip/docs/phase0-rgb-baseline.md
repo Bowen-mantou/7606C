@@ -34,6 +34,11 @@ Phase 11 amended the manifest to schema version 5 by adding `policy.mlp_obs_feat
 the MLP arm regains VariDP's observation MLP (`To*Dobs -> 256 -> 256`), as registered in
 `docs/final-plan.md` §6 B2. No scientific hyperparameter changed.
 
+Phase 17 (cleanup) amended the manifest to schema version 6 by adding
+`train.betas = [0.95, 0.999]`. The optimizer betas had been hardcoded in the trainer; the value
+is unchanged and now resolves through `baseline.toml` like every other training
+hyperparameter.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "reference_commit": "834be805df77bd53043bf7270da3fef0fab38d55",
   "captured_at": "2026-09-26T15:56:29+08:00",
   "amendments": [
@@ -18,6 +18,10 @@
     {
       "phase": 11,
       "change": "canonical_config.policy gained mlp_obs_feat_dim=256, restoring the MLP arm's observation MLP from VariDP (docs/final-plan.md §6 B2); no scientific hyperparameter changed"
+    },
+    {
+      "phase": 17,
+      "change": "canonical_config.train gained betas=[0.95,0.999], which was hardcoded in the trainer; the value is unchanged and now resolves through baseline.toml"
     }
   ],
   "canonical_config": {
@@ -68,6 +72,7 @@
       "batch_size": 64,
       "num_workers": 8,
       "lr": 0.0001,
+      "betas": [0.95, 0.999],
       "weight_decay": 0.000001,
       "warmup_steps": 500,
       "grad_clip": 1.0,

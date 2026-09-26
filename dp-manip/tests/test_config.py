@@ -151,6 +151,35 @@ val_path = "val.h5"
         with self.assertRaisesRegex(ValueError, "is not in experiment"):
             load(TASKS / "pickcube.toml", experiment=path, experiment_value="banana")
 
+    def test_optimizer_betas_resolve_from_baseline(self) -> None:
+        resolved = load(TASKS / "pickcube.toml")
+        self.assertEqual(resolved.train.betas, [0.95, 0.999])
+        overridden = load(TASKS / "pickcube.toml", ["train.betas=[0.9,0.95]"])
+        self.assertEqual(overridden.train.betas, [0.9, 0.95])
+
+    def test_invalid_training_and_evaluation_values_are_rejected(self) -> None:
+        cases = (
+            ("train.lr=0.0", "train.lr"),
+            ("train.weight_decay=-1e-6", "train.weight_decay"),
+            ("train.grad_clip=0.0", "train.grad_clip"),
+            ("train.num_workers=-1", "train.num_workers"),
+            ("train.betas=[0.9]", "train.betas"),
+            ("train.betas=[0.9, 1.0]", "train.betas"),
+            ("eval.inference_seed=-1", "evaluation seeds"),
+        )
+        for override, message in cases:
+            with self.subTest(override=override), self.assertRaisesRegex(ValueError, message):
+                load(TASKS / "pickcube.toml", [override])
+
+    def test_experiment_value_requires_an_experiment_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            override = Path(directory) / "override.toml"
+            override.write_text("[train]\nbatch_size = 8\n", encoding="utf-8")
+            resolved = load(TASKS / "pickcube.toml", experiment=override)
+            self.assertEqual(resolved.train.batch_size, 8)
+            with self.assertRaisesRegex(ValueError, "requires an experiment spec"):
+                load(TASKS / "pickcube.toml", experiment=override, experiment_value="50")
+
     def test_invalid_diagnostics_are_rejected(self) -> None:
         spec = """
 [experiment]

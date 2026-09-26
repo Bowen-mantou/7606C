@@ -239,7 +239,7 @@ def run_training(
     optimizer = torch.optim.AdamW(
         policy.parameters(),
         lr=cfg.train.lr,
-        betas=(0.95, 0.999),
+        betas=tuple(cfg.train.betas),
         weight_decay=cfg.train.weight_decay,
     )
     scheduler = torch.optim.lr_scheduler.LambdaLR(
