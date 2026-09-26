@@ -152,6 +152,8 @@ HDF5 与队友验证过的官方示范同结构（`traj_N/obs, actions, success,
 
 每个步骤成功后写 `<输出>.done`，有标记就跳过；有输出却没有标记（被打断或另一个作业在写）时报错，不覆盖，需要人工检查后删除。
 
+> 每个阶段的计数方式、数据流、失败点与每步的数据量，见 [docs/pipeline.md](docs/pipeline.md)。
+
 ## ManiSkill 3.0.1 的已知问题（本仓库已处理）
 
 1. `replay_trajectory --use-env-states` 录下的是「从设定状态走一步」的预测，不是状态本身 → state 与 rgb 各自独立转换。
