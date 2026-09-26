@@ -1,4 +1,8 @@
-"""Training utilities kept independent of the cluster entry point."""
+"""Training utilities shared by the trainer and the tests.
+
+EMA, the step-seeded sampler, RNG state capture and restartable checkpoint
+payloads live here; the training loop itself is ``dp_manip.trainer.run_training``.
+"""
 
 from __future__ import annotations
 

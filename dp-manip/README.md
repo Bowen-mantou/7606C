@@ -165,7 +165,7 @@ fingerprint，所以一个 checkpoint 能追溯到具体的数据文件。
 - `dp_manip/observation_encoder.py`：共享 RGB + proprio observation encoder，固定输出 `(B, To, Dobs)`。
 - `dp_manip/backbones/`：`NoisePredictor` 接口、`policy.backbone` 注册表、包装 canonical UNet
   的 `UNetBackbone` 与从 VariDP 迁移的 `TransformerBackbone`、`MLPBackbone`。
-- `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor。
+- `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor；`DiffusionPolicy.from_checkpoint` 是评测与测试共用的 checkpoint 装载口。
 - `dp_manip/trainer.py`：唯一训练 pipeline（resume、采样器、日志、checkpoint、评估 loss）。
 - `dp_manip/invariants.py`：Gate B 声明差异、config diff/prune 与 `control_hash`（checker 和 run 元数据共用）。
 - `dp_manip/metadata.py`：run 元数据辅助（git revision、dataset fingerprint）。

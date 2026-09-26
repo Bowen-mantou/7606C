@@ -4,6 +4,8 @@
 (task + experiment + value) differ only in how they resolve a :class:`Config`;
 both hand the resolved config to :func:`run_training`. Experiments must not grow
 their own trainer, so any new experiment is a config file, never a pipeline.
+The restartable-state utilities (EMA, sampler, RNG capture, checkpoint payloads)
+live in ``dp_manip.training``.
 """
 
 from __future__ import annotations

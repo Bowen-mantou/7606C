@@ -105,5 +105,16 @@
   改为两条轨道都由 `dp-manip` 运行）。新增 `tests/test_legacy_boundary.py` 静态检查正式代码
   （`dp_manip/`、`scripts/`、`slurm/`、`tests/`）不 import/执行 legacy 或 VariDP，并确认归档
   位置；已创建 annotated tag `pre-unified-pipeline` 指向 Phase 0 冻结的 `834be80`。
+- Phase 17（M17 cleanup）已完成三批整理：(1) 优化器 `betas` 从 trainer 硬编码移到
+  `baseline.toml`（Phase 0 manifest 升到 schema version 6，值不变），`Config.validate`
+  补齐 lr/betas/weight_decay/grad_clip/num_workers/eval seed 校验，`load()` 拒绝给普通
+  override 传 `experiment_value`；(2) `DiffusionPolicy.from_checkpoint` 成为唯一 checkpoint
+  装载口（`eval_dp.py` 与测试共用），新增 `tests/test_checkpoint_lifecycle.py` 用合成数据
+  跑通 train→save→load→sample→resume，补上 §20 的 Checkpoint Test（闭环 evaluate 仍需集群
+  ManiSkill）；(3) 文档勘误：`docs/final-plan.md` 标注 PegInsertionSide/PlugCharger 实际导出
+  用 `pd_joint_pos`，并在文首标明 RGB baseline 的实际口径（batch 64、自实现 EMA 0.9999），
+  `training.py` / `trainer.py` 职责互相注明，canonical 代码的 unused import
+  扫描干净（仅 `__future__ annotations` 与 `envs.py` 里显式标注的 ManiSkill 注册 import）。
+  按 §25 未做 `dp_manip`→`dp_policy` 等大规模目录 rename，也未引入新的 lint 工具链。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

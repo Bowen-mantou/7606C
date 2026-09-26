@@ -1,8 +1,14 @@
 # 最终实验参数（六任务基线 + 两条研究轨道）
 
 > **历史文档（state-based，2026-09-24）**：当前实现已经按新要求改为 RGB-based，任务和
-> 控制模式以 `../configs/*_rgb.toml` 为准。数据量研究的嵌套 N 档、训练种子数、100k 固定
+> 控制模式以 `../configs/tasks/*.toml` 为准。数据量研究的嵌套 N 档、训练种子数、100k 固定
 > 步数与 held-out seed 段继续沿用；当前可执行计划见 `../PLAN.md`。
+>
+> **9.27 实现口径**：RGB baseline 的 batch 是 64（本文 §4/§8 写的 1024 未采用），EMA 是
+> 自实现的 decay 0.9999（含早期 ramp，不是 diffusers `EMAModel` 0.995），optimizer 的
+> betas (0.95, 0.999) 已进入 `baseline.toml`；lr 1e-4 / weight decay 1e-6 / 100k 步 /
+> 10k-30k-60k 中间 checkpoint 与本文一致。一切以 `configs/baseline.toml` 和
+> `baselines/phase0/pickcube_rgb.json` 为准。
 
 **起草**：9.24 ｜ 课程要求：[requirements.md](./requirements.md) ｜ 参考：组员 VariDP 教程（[实验三_Track3_完整教程.md](https://github.com/hryang1130/VariDP/blob/main/%E5%AE%9E%E9%AA%8C%E4%B8%89_Track3_%E5%AE%8C%E6%95%B4%E6%95%99%E7%A8%8B.md)）
 
@@ -57,6 +63,10 @@
 | 4 | PullCube-v1 | 非抓取：绕到方块远侧往回**拉** | 方块进入 goal_region | `pd_ee_delta_pos`（4） | 100 |
 | 5 | PegInsertionSide-v1 | 抓取 + 紧公差侧向插入 | peg 头部进入孔中 | `pd_ee_delta_pose`（7） | 300 |
 | 6 | PlugCharger-v1 | 抓取 + 位置和姿态对准的插接 | 距离 ≤ 5 mm **且**角度误差 ≤ 0.2 rad | `pd_ee_delta_pose`（7） | 200* |
+
+> **9.27 实际导出**：PegInsertionSide 与 PlugCharger 的 `pd_ee_delta_pose` 转换成功率未达到
+> §2.3 规定的 90% 门槛，按该预先规则改用 `pd_joint_pos`（8 维）。最终数据以
+> `maniskill-demogen/tasks.py` 和 `dp-manip/configs/tasks/*.toml` 为准；上表保留原计划值。
 
 - **控制模式和回合长度取自 ManiSkill 官方 DP 基线的 `baselines.sh`**：要转动末端的任务用 `pd_ee_delta_pose`。PullCube 没有官方值，按 PushCube 取；PlugCharger 也没有官方值，按 PegInsertionSide 取。
 - **训练步数六个任务统一为 100k**（§3），取官方各任务中的最大值（PegInsertionSide），不再按任务区分。官方给 PickCube、PushCube、StackCube 的是 30k。
@@ -217,7 +227,7 @@
 | 项目 | VariDP 教程 | 本计划 | 理由 |
 | --- | --- | --- | --- |
 | 示范来源 | 下载官方数据后转换；另用自写脚本控制器生成 2–3 个任务 | 自己运行官方运动规划器，六个任务全部自己生成 | 课程明确规定只下载数据不算完成；我们的 Linux 机器上 mplib 可用 |
-| 控制模式 | `pd_ee_delta_pos`；Peg、Plug 用 `pd_ee_delta_pose` | **采纳** | 与官方基线一致，可以和官方结果对照 |
+| 控制模式 | `pd_ee_delta_pos`；Peg、Plug 用 `pd_ee_delta_pose` | **采纳**（实际导出 Peg/Plug 用 `pd_joint_pos`，见 §1 注） | 与官方基线一致，可以和官方结果对照 |
 | 回合长度 | 按 `baselines.sh` | **采纳** | 同上 |
 | 训练步数 | 按 `baselines.sh`（30k / 100k）；他的实测里 batch 256 × 30k 步明显训练不足 | 六个任务统一 100k，batch 1024 | 取最大值统一，简单任务也不会训练不足；任务之间可以直接比较 |
 | 训练 / 测试种子 | 训练用 0…n−1，测试用 2000–2049（50 回合） | 训练池从 0 起，验证用 4000+ 和 5000–5049，**测试用 10000–10099（100 回合）** | 测试回合多一倍，评估噪声更小；验证与测试分开。**全组要统一用一套种子** |
@@ -234,7 +244,7 @@
 
 ## 9. 已确认的决定（9.24）
 
-1. **控制模式改用 ee-delta**：PickCube、StackCube、PushCube、PullCube 用 `pd_ee_delta_pos`，PegInsertionSide、PlugCharger 用 `pd_ee_delta_pose`。这与 pilot 用的 `pd_joint_pos` 不同；某个任务的转换成功率低于 90% 时退回 `pd_joint_pos`（§2.3）。
+1. **控制模式改用 ee-delta**：PickCube、StackCube、PushCube、PullCube 用 `pd_ee_delta_pos`，PegInsertionSide、PlugCharger 用 `pd_ee_delta_pose`。这与 pilot 用的 `pd_joint_pos` 不同；某个任务的转换成功率低于 90% 时退回 `pd_joint_pos`（§2.3）。实际导出时 Peg/Plug 触发了该退回规则，最终用 `pd_joint_pos`（见 §1 注）。
 2. **三种主干统一改用 VariDP 最新的官方实现（9.25 更新）**：UNet = 官方 `ConditionalUnet1D`（66.4M）、Transformer = 官方 DP-T `TransformerForDiffusion`（8.97M）、MLP = `MLPNoisePred`（0.353M）。原先「MLP 加宽到 3.5M、三种主干参数量对齐到 3–5M」的决定作废；参数量不再对齐，理由和报告口径见 §6。
 3. **全组统一种子和检查点口径**：测试种子 10000–10099（100 回合），报告只用 `final.pt`；VariDP 那边相应修改。
 4. **训练步数六个任务统一为 100k**（原先按官方值，四个任务是 30k）。代价是这四个任务的训练时间变为约 3.3 倍；N=25 时每条示范要被看过上万遍，可能过拟合。要在训练到 1/3、2/3 和结束时的验证 rollout 上检查成功率有没有后期下降，如果有，就在报告里如实写明，不改变口径。
