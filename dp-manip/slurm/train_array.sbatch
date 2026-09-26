@@ -11,7 +11,7 @@
 # jobs never train the same directory at once; finished cells are then skipped.
 #SBATCH --job-name=dp-rgb-train
 #SBATCH --array=0-95%4
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH --time=48:00:00

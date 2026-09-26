@@ -5,7 +5,7 @@
 #   sbatch --array=0-89%4 --export=ALL,EXPERIMENT=configs/experiments/backbone.toml slurm/eval_array.sbatch
 #SBATCH --job-name=dp-rgb-eval
 #SBATCH --array=0-95%4
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00

@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "reference_commit": "834be805df77bd53043bf7270da3fef0fab38d55",
   "captured_at": "2026-09-26T15:56:29+08:00",
   "amendments": [
@@ -22,6 +22,10 @@
     {
       "phase": 17,
       "change": "canonical_config.train gained betas=[0.95,0.999], which was hardcoded in the trainer; the value is unchanged and now resolves through baseline.toml"
+    },
+    {
+      "phase": 17,
+      "change": "canonical_config.train.num_workers 8 -> 4 to fit the 4 CPUs per GPU job on the HKU cluster; batches are drawn from (seed, step), so training is unchanged"
     }
   ],
   "canonical_config": {
@@ -70,7 +74,7 @@
       "seed": 1,
       "total_iters": 100000,
       "batch_size": 64,
-      "num_workers": 8,
+      "num_workers": 4,
       "lr": 0.0001,
       "betas": [0.95, 0.999],
       "weight_decay": 0.000001,

@@ -40,7 +40,9 @@ mlp_obs_feat_dim = 256
 seed = 1
 total_iters = 100000
 batch_size = 64
-num_workers = 8
+# DataLoader workers; matches the 4 CPUs per GPU job on the HKU cluster.
+# Batches depend only on (seed, step), so this does not change training.
+num_workers = 4
 lr = 1e-4
 betas = [0.95, 0.999]
 weight_decay = 1e-6

@@ -39,6 +39,11 @@ Phase 17 (cleanup) amended the manifest to schema version 6 by adding
 is unchanged and now resolves through `baseline.toml` like every other training
 hyperparameter.
 
+A second Phase 17 amendment (schema version 7) lowered `train.num_workers` from 8 to 4 to fit
+the 4 CPUs of a GPU job on the HKU cluster (the Slurm scripts request `--cpus-per-task=4`).
+Batches are drawn from `(seed, step)` and workers consume no randomness, so training is
+unchanged.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

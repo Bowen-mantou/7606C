@@ -4,7 +4,7 @@
 # EXPERIMENT selects the grid (default: data-size N=400).
 #SBATCH --job-name=dp-rgb-n400
 #SBATCH --array=0-29%4
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH --time=48:00:00
