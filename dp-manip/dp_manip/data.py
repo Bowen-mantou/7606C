@@ -2,7 +2,7 @@
 
 Only low-dimensional observations and actions are scanned eagerly. Compressed
 RGB frames remain in HDF5 and are read by DataLoader workers per temporal
-window, keeping a 400-demonstration task from consuming several GB of RAM.
+window, keeping large demonstration sets from consuming several GB of RAM.
 """
 
 from __future__ import annotations

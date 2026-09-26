@@ -17,5 +17,5 @@ CHECKPOINT=${CHECKPOINT:-final.pt}
 SPLIT=${SPLIT:-test}
 NUM_ENVS=${NUM_ENVS:-4}
 
-"$PYTHON" scripts/sweep.py eval --tier core --index "$SLURM_ARRAY_TASK_ID" \
+"$PYTHON" scripts/sweep.py eval --index "$SLURM_ARRAY_TASK_ID" \
   --output-root "$RUN_ROOT" --checkpoint "$CHECKPOINT" --split "$SPLIT" --num-envs "$NUM_ENVS"

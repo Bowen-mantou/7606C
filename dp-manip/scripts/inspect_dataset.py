@@ -16,18 +16,19 @@ from dp_manip.data import compute_normalization, read_dataset_info  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", action="append", type=Path, help="repeatable; default: all *_rgb.toml")
+    parser.add_argument("--config", action="append", type=Path, help="repeatable; default: all task configs")
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--num-demos", type=int, default=400)
+    parser.add_argument("--num-demos", type=int, help="limit the inspected training subset")
     args = parser.parse_args()
     configs = args.config or sorted((ROOT / "configs" / "tasks").glob("*.toml"))
     failures = 0
     for config_path in configs:
         try:
-            cfg = load(config_path, [f"data.num_demos={args.num_demos}"])
+            overrides = [] if args.num_demos is None else [f"data.num_demos={args.num_demos}"]
+            cfg = load(config_path, overrides)
             train_path = args.data_root / cfg.data.train_path
             val_path = args.data_root / cfg.data.val_path
-            train = read_dataset_info(train_path, cfg.data.num_demos)
+            train = read_dataset_info(train_path, args.num_demos)
             val = read_dataset_info(val_path, cfg.data.val_num_demos)
             if (train.env_id, train.control_mode) != (cfg.task.env_id, cfg.task.control_mode):
                 raise ValueError("training metadata does not match task config")

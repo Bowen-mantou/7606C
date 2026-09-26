@@ -63,7 +63,7 @@ traj_i/actions        float32 (T, A)
 .venv/bin/python scripts/inspect_dataset.py --data-root "$DATA_ROOT"
 
 # 3. 查看数组索引映射
-.venv/bin/python scripts/sweep.py show --tier core
+.venv/bin/python scripts/sweep.py show
 
 # 4. 提交 96 个核心训练；%4 表示最多同时跑 4 个，可按配额调整
 sbatch --export=ALL,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
@@ -78,7 +78,8 @@ sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
 ```bash
 .venv/bin/python scripts/train_dp.py \
   --config configs/tasks/pickcube.toml \
-  --data-root "$DATA_ROOT" --num-demos 25 --seed 1
+  --experiment configs/experiments/data_size.toml --experiment-value 25 \
+  --data-root "$DATA_ROOT" --seed 1
 ```
 
 作业收到 Slurm 的 `USR1`/`TERM` 后会写 `checkpoints/resume.pt` 并以状态 75 退出；
@@ -113,6 +114,6 @@ runs/<task>_rgb_unet_n<N>_s<seed>/
 - `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
 - `PLAN.md`：数据量实验矩阵和运行口径。
 
-旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md`、
-`configs/baseline.toml` 和 `configs/tasks/` 是当前权威定义。`configs/*_rgb.toml`
-仅为旧命令保留兼容跳转。
+旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md` 和
+`configs/baseline.toml`、`configs/tasks/` 与 `configs/experiments/` 是当前权威定义；
+`configs/*_rgb.toml` 仅为旧命令保留兼容跳转。

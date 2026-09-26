@@ -1,10 +1,11 @@
-# Layered RGB configs
+# Layered RGB experiment configs
 
 正式入口按以下顺序解析，并将完整结果保存进 checkpoint：
 
 ```text
 baseline.toml
   + tasks/<task>.toml
+  + experiment override
   + CLI runtime override
 ```
 
@@ -12,11 +13,20 @@ baseline.toml
 和通用 data 默认值的唯一权威来源。`tasks/*.toml` 只保存环境、控制模式、回合长度
 和数据路径。根目录的 `*_rgb.toml` 仅为旧命令提供跳转，不含第二份 baseline 参数。
 
-例如：
+正式 data-size grid 定义在 `experiments/data_size.toml`，其中声明
+`variable = "data.num_demos"`、实验 values 和各 value 的 replicate seeds。core 只要求
+`data.num_demos` 为正整数。条件式 N=400 follow-up 单独放在
+`experiments/data_size_optional400.toml`，不属于正式 grid。
+
+例如，解析 PickCube 的 N=50 数据量实验：
 
 ```bash
-python scripts/train_dp.py --config configs/tasks/pickcube.toml
+python scripts/train_dp.py \
+  --config configs/tasks/pickcube.toml \
+  --experiment configs/experiments/data_size.toml \
+  --experiment-value 50
 ```
 
-`--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是运行时覆盖；集群上可用
-`--data-root` 覆盖数据根目录。临时 smoke 可用 `--set train.total_iters=...`。
+`--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是最后应用的运行时覆盖。
+集群上可用 `--data-root` 覆盖数据根目录。临时 smoke 可用
+`--set train.total_iters=...`；正式实验仍使用 baseline 的固定训练预算。

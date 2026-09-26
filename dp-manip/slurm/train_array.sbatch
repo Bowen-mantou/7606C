@@ -18,7 +18,7 @@ cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 RUN_ROOT=${RUN_ROOT:-runs}
 PYTHON=${PYTHON:-.venv/bin/python}
 
-"$PYTHON" scripts/sweep.py train --tier core --index "$SLURM_ARRAY_TASK_ID" \
+"$PYTHON" scripts/sweep.py train --index "$SLURM_ARRAY_TASK_ID" \
   --data-root "$DATA_ROOT" --output-root "$RUN_ROOT" &
 training_pid=$!
 trap 'kill -USR1 "$training_pid" 2>/dev/null || true' USR1 TERM

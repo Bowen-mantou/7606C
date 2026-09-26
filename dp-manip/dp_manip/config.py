@@ -99,9 +99,17 @@ class Config:
     def validate(self) -> None:
         if self.task.sim_backend != "physx_cpu":
             raise ValueError("evaluation must use physx_cpu to match the generated demonstrations")
-        if self.data.num_demos not in {25, 50, 100, 200, 400}:
-            raise ValueError("data.num_demos must be one of 25, 50, 100, 200, 400")
-        if self.data.val_num_demos < 1:
+        if (
+            isinstance(self.data.num_demos, bool)
+            or not isinstance(self.data.num_demos, int)
+            or self.data.num_demos < 1
+        ):
+            raise ValueError("data.num_demos must be positive")
+        if (
+            isinstance(self.data.val_num_demos, bool)
+            or not isinstance(self.data.val_num_demos, int)
+            or self.data.val_num_demos < 1
+        ):
             raise ValueError("data.val_num_demos must be positive")
         policy = self.policy
         if min(policy.obs_horizon, policy.act_horizon, policy.pred_horizon) < 1:
@@ -137,6 +145,22 @@ class Config:
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
+class ExperimentSpec:
+    """A declared experiment variable, grid values, and replicate seeds."""
+
+    name: str
+    variable: str
+    values: tuple[Any, ...]
+    replicates: Mapping[str, tuple[int, ...]]
+
+    def seeds_for(self, value: Any) -> tuple[int, ...]:
+        try:
+            return self.replicates[str(value)]
+        except KeyError as error:
+            raise ValueError(f"experiment {self.name!r} has no replicates for value {value!r}") from error
 
 
 _T = TypeVar("_T")
@@ -214,6 +238,54 @@ def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, 
     return merged
 
 
+def _set_dotted(raw: dict[str, Any], dotted_key: str, value: Any) -> None:
+    section, dot, name = dotted_key.partition(".")
+    if not dot or section not in _SECTIONS or not name or "." in name:
+        raise ValueError(f"override must look like section.key: {dotted_key!r}")
+    raw.setdefault(section, {})[name] = value
+
+
+def _parse_override(item: str) -> tuple[str, Any]:
+    key, separator, value = item.partition("=")
+    if not separator:
+        raise ValueError(f"override must look like section.key=value: {item!r}")
+    try:
+        parsed = tomllib.loads(f"value = {value}")["value"]
+    except tomllib.TOMLDecodeError:
+        parsed = value
+    return key, parsed
+
+
+def load_experiment(path: str | Path) -> ExperimentSpec:
+    """Load a sweep definition without leaking its grid into core config code."""
+    raw = _read_toml(Path(path))
+    unknown = set(raw) - {"experiment", "replicates"}
+    if unknown:
+        raise ValueError(f"unknown experiment sections: {sorted(unknown)}")
+    experiment = raw.get("experiment", {})
+    if set(experiment) != {"name", "variable", "values"}:
+        raise ValueError("[experiment] must define exactly name, variable, and values")
+    variable = experiment["variable"]
+    values = experiment["values"]
+    if not isinstance(variable, str) or not isinstance(values, list) or not values:
+        raise ValueError("experiment variable must be a string and values must be a non-empty list")
+    probe: dict[str, Any] = {}
+    _set_dotted(probe, variable, values[0])
+    raw_replicates = raw.get("replicates", {})
+    if not isinstance(raw_replicates, dict):
+        raise ValueError("[replicates] must be a table")
+    replicates = {
+        str(value): tuple(int(seed) for seed in raw_replicates.get(str(value), ()))
+        for value in values
+    }
+    if any(not seeds or any(seed < 0 for seed in seeds) for seeds in replicates.values()):
+        raise ValueError("every experiment value must define non-negative replicate seeds")
+    extra = set(raw_replicates) - {str(value) for value in values}
+    if extra:
+        raise ValueError(f"replicates defined for unknown values: {sorted(extra)}")
+    return ExperimentSpec(str(experiment["name"]), variable, tuple(values), replicates)
+
+
 def _resolve_legacy_task(path: Path, raw: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     if set(raw) != {"legacy"}:
         return path, raw
@@ -237,20 +309,38 @@ def load(
     overrides: Sequence[str] = (),
     *,
     baseline: str | Path | None = None,
+    experiment: str | Path | Mapping[str, Any] | None = None,
+    experiment_value: Any | None = None,
 ) -> Config:
-    """Resolve ``baseline + task + runtime overrides`` into one config."""
+    """Resolve baseline -> task -> experiment -> runtime overrides."""
     task_path = Path(path).resolve()
     task_path, task_raw = _resolve_legacy_task(task_path, _read_toml(task_path))
     baseline_path = Path(baseline).resolve() if baseline is not None else _default_baseline(task_path)
     raw = _deep_merge(_read_toml(baseline_path), task_raw)
+
+    if experiment is None and experiment_value is not None:
+        raise ValueError("experiment_value requires an experiment")
+    if experiment is not None:
+        if isinstance(experiment, Mapping):
+            experiment_layer = dict(experiment)
+        else:
+            experiment_path = Path(experiment).resolve()
+            experiment_raw = _read_toml(experiment_path)
+            if "experiment" in experiment_raw:
+                spec = load_experiment(experiment_path)
+                if experiment_value is None:
+                    raise ValueError(f"experiment {spec.name!r} requires an experiment value")
+                if experiment_value not in spec.values:
+                    raise ValueError(
+                        f"value {experiment_value!r} is not in experiment {spec.name!r}: {list(spec.values)}"
+                    )
+                experiment_layer: dict[str, Any] = {}
+                _set_dotted(experiment_layer, spec.variable, experiment_value)
+            else:
+                experiment_layer = experiment_raw
+        raw = _deep_merge(raw, experiment_layer)
+
     for item in overrides:
-        key, separator, value = item.partition("=")
-        section, dot, name = key.partition(".")
-        if not separator or not dot or section not in _SECTIONS:
-            raise ValueError(f"override must look like section.key=value: {item!r}")
-        try:
-            parsed = tomllib.loads(f"value = {value}")["value"]
-        except tomllib.TOMLDecodeError:
-            parsed = value
-        raw.setdefault(section, {})[name] = parsed
+        key, value = _parse_override(item)
+        _set_dotted(raw, key, value)
     return from_dict(raw)

@@ -43,11 +43,13 @@ from dp_manip.training import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--config", required=True, type=Path, help="task-only config")
+    parser.add_argument("--experiment", type=Path, help="experiment specification or override TOML")
+    parser.add_argument("--experiment-value", type=int, help="selected value from an experiment grid")
     parser.add_argument("--data-root", type=Path, help="override data.root (for example, a scratch dataset directory)")
     parser.add_argument("--output-root", type=Path, default=ROOT / "runs")
     parser.add_argument("--exp", help="run directory name; default: <task>_rgb_unet_n<N>_s<seed>")
-    parser.add_argument("--num-demos", type=int, choices=(25, 50, 100, 200, 400))
+    parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--resume", choices=("auto", "never"), default="auto")
@@ -162,7 +164,12 @@ def inference_payload(
 
 def main() -> int:
     args = parse_args()
-    cfg = config_lib.load(args.config, args.overrides)
+    cfg = config_lib.load(
+        args.config,
+        args.overrides,
+        experiment=args.experiment,
+        experiment_value=args.experiment_value,
+    )
     if args.num_demos is not None:
         cfg.data.num_demos = args.num_demos
     if args.seed is not None:
