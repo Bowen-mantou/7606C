@@ -1,10 +1,22 @@
-# RGB task configs
+# Layered RGB configs
 
-六个 `*_rgb.toml` 是训练、checkpoint 与评估共用的权威配置。共同参数保持一致，仅任务 id、
-控制模式、数据路径和回合长度不同。
+正式入口按以下顺序解析，并将完整结果保存进 checkpoint：
 
-`[data]` 的路径相对 `data.root`；集群上用 `--data-root` 或 `DATA_ROOT` 覆盖根目录。
-`num_demos` 只允许 25/50/100/200/400，并始终取按 seed 排序后的前 N 条。
+```text
+baseline.toml
+  + tasks/<task>.toml
+  + CLI runtime override
+```
 
-临时 smoke 可用 `--set train.total_iters=...`，但正式数据量实验必须使用配置里的 100k 步。
-每个 checkpoint 保存解析后的完整配置，评估不会再次猜控制模式、相机数或 horizon。
+`baseline.toml` 是仿真/渲染、vision、policy、train、EMA、diffusion、evaluation
+和通用 data 默认值的唯一权威来源。`tasks/*.toml` 只保存环境、控制模式、回合长度
+和数据路径。根目录的 `*_rgb.toml` 仅为旧命令提供跳转，不含第二份 baseline 参数。
+
+例如：
+
+```bash
+python scripts/train_dp.py --config configs/tasks/pickcube.toml
+```
+
+`--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是运行时覆盖；集群上可用
+`--data-root` 覆盖数据根目录。临时 smoke 可用 `--set train.total_iters=...`。

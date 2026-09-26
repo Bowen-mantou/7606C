@@ -36,7 +36,7 @@ class Run:
 
     @property
     def config(self) -> Path:
-        return ROOT / "configs" / f"{self.task}_rgb.toml"
+        return ROOT / "configs" / "tasks" / f"{self.task}.toml"
 
     @property
     def name(self) -> str:

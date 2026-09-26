@@ -20,7 +20,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--num-demos", type=int, default=400)
     args = parser.parse_args()
-    configs = args.config or sorted((ROOT / "configs").glob("*_rgb.toml"))
+    configs = args.config or sorted((ROOT / "configs" / "tasks").glob("*.toml"))
     failures = 0
     for config_path in configs:
         try:

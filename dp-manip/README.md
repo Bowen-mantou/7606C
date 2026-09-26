@@ -11,12 +11,12 @@
 
 | 配置 | 环境 | 控制模式 | 动作维 | 评估步数 |
 | --- | --- | --- | ---: | ---: |
-| `pickcube_rgb.toml` | PickCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
-| `stackcube_rgb.toml` | StackCube-v1 | `pd_ee_delta_pos` | 4 | 200 |
-| `pushcube_rgb.toml` | PushCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
-| `pullcube_rgb.toml` | PullCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
-| `peginsertionside_rgb.toml` | PegInsertionSide-v1 | `pd_joint_pos` | 8 | 300 |
-| `plugcharger_rgb.toml` | PlugCharger-v1 | `pd_joint_pos` | 8 | 200 |
+| `tasks/pickcube.toml` | PickCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
+| `tasks/stackcube.toml` | StackCube-v1 | `pd_ee_delta_pos` | 4 | 200 |
+| `tasks/pushcube.toml` | PushCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
+| `tasks/pullcube.toml` | PullCube-v1 | `pd_ee_delta_pos` | 4 | 100 |
+| `tasks/peginsertionside.toml` | PegInsertionSide-v1 | `pd_joint_pos` | 8 | 300 |
+| `tasks/plugcharger.toml` | PlugCharger-v1 | `pd_joint_pos` | 8 | 200 |
 
 PegInsertionSide 与 PlugCharger 使用 `pd_joint_pos`，与 `maniskill-demogen/tasks.py` 的最终数据一致。
 绝对关节目标会先按训练子集做 min-max 归一化，执行时还原，不裁剪到 `[-1, 1]`。
@@ -77,7 +77,7 @@ sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
 
 ```bash
 .venv/bin/python scripts/train_dp.py \
-  --config configs/pickcube_rgb.toml \
+  --config configs/tasks/pickcube.toml \
   --data-root "$DATA_ROOT" --num-demos 25 --seed 1
 ```
 
@@ -113,5 +113,6 @@ runs/<task>_rgb_unet_n<N>_s<seed>/
 - `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
 - `PLAN.md`：数据量实验矩阵和运行口径。
 
-旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md` 和
-`configs/*_rgb.toml` 是当前权威定义。
+旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md`、
+`configs/baseline.toml` 和 `configs/tasks/` 是当前权威定义。`configs/*_rgb.toml`
+仅为旧命令保留兼容跳转。

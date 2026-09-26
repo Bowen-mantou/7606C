@@ -45,6 +45,7 @@ def main() -> None:
     policy = DiffusionPolicy(
         cfg.policy,
         cfg.vision,
+        cfg.diffusion,
         image_shape=tuple(train_data["image_shape"]),
         proprio_dim=int(train_data["proprio_dim"]),
         action_dim=int(train_data["action_dim"]),

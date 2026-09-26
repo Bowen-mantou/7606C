@@ -1,12 +1,13 @@
-"""Typed experiment configuration shared by cluster training and evaluation."""
+"""Layered, typed experiment configuration for training and evaluation."""
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
+from typing import Any, Mapping, Sequence, TypeVar
 
 
 @dataclass
@@ -15,8 +16,8 @@ class TaskConfig:
     env_id: str
     control_mode: str
     max_episode_steps: int
-    sim_backend: str = "physx_cpu"
-    shader_pack: str = "minimal"
+    sim_backend: str
+    shader_pack: str
 
 
 @dataclass
@@ -24,67 +25,76 @@ class DataConfig:
     root: str
     train_path: str
     val_path: str
-    # The exporter sorts by seed, so these are nested subsets.
-    num_demos: int = 100
-    val_num_demos: int = 50
+    num_demos: int
+    val_num_demos: int
 
 
 @dataclass
 class VisionConfig:
-    feature_dim: int = 128
-    random_shift: int = 4
-    share_camera_encoder: bool = True
+    feature_dim: int
+    random_shift: int
+    share_camera_encoder: bool
 
 
 @dataclass
 class PolicyConfig:
-    obs_horizon: int = 2
-    act_horizon: int = 8
-    pred_horizon: int = 16
-    diffusion_step_embed_dim: int = 256
-    unet_dims: list[int] = field(default_factory=lambda: [256, 512, 1024])
-    kernel_size: int = 5
-    n_groups: int = 8
-    num_diffusion_iters: int = 100
-    num_inference_iters: int = 100
+    obs_horizon: int
+    act_horizon: int
+    pred_horizon: int
+    diffusion_step_embed_dim: int
+    unet_dims: list[int]
+    kernel_size: int
+    n_groups: int
 
 
 @dataclass
 class TrainConfig:
-    seed: int = 1
-    total_iters: int = 100_000
-    batch_size: int = 64
-    num_workers: int = 8
-    lr: float = 1e-4
-    weight_decay: float = 1e-6
-    warmup_steps: int = 500
-    grad_clip: float = 1.0
-    ema_decay: float = 0.9999
-    log_freq: int = 100
-    resume_freq: int = 5_000
-    validation_steps: list[int] = field(default_factory=lambda: [10_000, 30_000, 60_000])
-    checkpoint_steps: list[int] = field(default_factory=lambda: [10_000, 30_000, 60_000])
-    amp: bool = True
+    seed: int
+    total_iters: int
+    batch_size: int
+    num_workers: int
+    lr: float
+    weight_decay: float
+    warmup_steps: int
+    grad_clip: float
+    log_freq: int
+    resume_freq: int
+    validation_steps: list[int]
+    checkpoint_steps: list[int]
+    amp: bool
+
+
+@dataclass
+class EmaConfig:
+    decay: float
+
+
+@dataclass
+class DiffusionConfig:
+    num_diffusion_iters: int
+    num_inference_iters: int
 
 
 @dataclass
 class EvalConfig:
-    val_seed_start: int = 5_000
-    val_episodes: int = 50
-    test_seed_start: int = 10_000
-    test_episodes: int = 100
-    num_envs: int = 4
-    inference_seed: int = 0
+    val_seed_start: int
+    val_episodes: int
+    test_seed_start: int
+    test_episodes: int
+    num_envs: int
+    inference_seed: int
 
 
 @dataclass
 class Config:
     task: TaskConfig
     data: DataConfig
-    vision: VisionConfig = field(default_factory=VisionConfig)
-    policy: PolicyConfig = field(default_factory=PolicyConfig)
-    train: TrainConfig = field(default_factory=TrainConfig)
-    eval: EvalConfig = field(default_factory=EvalConfig)
+    vision: VisionConfig
+    policy: PolicyConfig
+    train: TrainConfig
+    ema: EmaConfig
+    diffusion: DiffusionConfig
+    eval: EvalConfig
 
     def validate(self) -> None:
         if self.task.sim_backend != "physx_cpu":
@@ -98,7 +108,10 @@ class Config:
             raise ValueError("all horizons must be positive")
         if policy.obs_horizon + policy.act_horizon - 1 > policy.pred_horizon:
             raise ValueError("need obs_horizon + act_horizon - 1 <= pred_horizon")
-        if policy.num_inference_iters > policy.num_diffusion_iters:
+        diffusion = self.diffusion
+        if diffusion.num_diffusion_iters < 1 or diffusion.num_inference_iters < 1:
+            raise ValueError("diffusion iteration counts must be positive")
+        if diffusion.num_inference_iters > diffusion.num_diffusion_iters:
             raise ValueError("inference diffusion iterations cannot exceed training iterations")
         if self.vision.feature_dim < 1 or self.vision.random_shift < 0:
             raise ValueError("invalid vision encoder settings")
@@ -108,6 +121,8 @@ class Config:
         for step in [*train.validation_steps, *train.checkpoint_steps]:
             if step < 1:
                 raise ValueError(f"intermediate step {step} must be positive")
+        if not 0.0 <= self.ema.decay < 1.0:
+            raise ValueError("ema.decay must be in [0, 1)")
         evaluation = self.eval
         if evaluation.val_episodes < 1 or evaluation.test_episodes < 1 or evaluation.num_envs < 1:
             raise ValueError("evaluation counts must be positive")
@@ -131,6 +146,8 @@ _SECTIONS = {
     "vision": VisionConfig,
     "policy": PolicyConfig,
     "train": TrainConfig,
+    "ema": EmaConfig,
+    "diffusion": DiffusionConfig,
     "eval": EvalConfig,
 }
 
@@ -143,10 +160,37 @@ def _section(cls: type[_T], raw: dict[str, Any], name: str) -> _T:
     unknown = set(values) - known
     if unknown:
         raise ValueError(f"unknown keys in [{name}]: {sorted(unknown)}")
-    return cls(**values)
+    try:
+        return cls(**values)
+    except TypeError as error:
+        raise ValueError(f"invalid or incomplete [{name}] section: {error}") from error
+
+
+def _adapt_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
+    """Map version-1 checkpoint config fields at the checkpoint boundary."""
+    raw = copy.deepcopy(raw)
+    policy = raw.get("policy")
+    if isinstance(policy, dict):
+        diffusion = raw.setdefault("diffusion", {})
+        for name in ("num_diffusion_iters", "num_inference_iters"):
+            if name in policy:
+                value = policy.pop(name)
+                if name in diffusion and diffusion[name] != value:
+                    raise ValueError(f"conflicting legacy policy.{name} and diffusion.{name}")
+                diffusion[name] = value
+    train = raw.get("train")
+    if isinstance(train, dict) and "ema_decay" in train:
+        ema = raw.setdefault("ema", {})
+        value = train.pop("ema_decay")
+        if "decay" in ema and ema["decay"] != value:
+            raise ValueError("conflicting legacy train.ema_decay and ema.decay")
+        ema["decay"] = value
+    return raw
 
 
 def from_dict(raw: dict[str, Any]) -> Config:
+    """Build a resolved config, adapting the version-1 checkpoint layout."""
+    raw = _adapt_legacy_config(raw)
     unknown = set(raw) - set(_SECTIONS)
     if unknown:
         raise ValueError(f"unknown config sections: {sorted(unknown)}")
@@ -155,10 +199,50 @@ def from_dict(raw: dict[str, Any]) -> Config:
     return cfg
 
 
-def load(path: str | Path, overrides: Sequence[str] = ()) -> Config:
-    """Load TOML and apply repeatable ``section.key=value`` overrides."""
-    with Path(path).open("rb") as stream:
-        raw = tomllib.load(stream)
+def _read_toml(path: Path) -> dict[str, Any]:
+    with path.open("rb") as stream:
+        return tomllib.load(stream)
+
+
+def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _resolve_legacy_task(path: Path, raw: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    if set(raw) != {"legacy"}:
+        return path, raw
+    legacy = raw["legacy"]
+    if not isinstance(legacy, dict) or set(legacy) != {"task_config"}:
+        raise ValueError("legacy config must contain only legacy.task_config")
+    task_path = (path.parent / legacy["task_config"]).resolve()
+    return task_path, _read_toml(task_path)
+
+
+def _default_baseline(task_path: Path) -> Path:
+    candidates = (task_path.parent / "baseline.toml", task_path.parent.parent / "baseline.toml")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"could not find baseline.toml for {task_path}")
+
+
+def load(
+    path: str | Path,
+    overrides: Sequence[str] = (),
+    *,
+    baseline: str | Path | None = None,
+) -> Config:
+    """Resolve ``baseline + task + runtime overrides`` into one config."""
+    task_path = Path(path).resolve()
+    task_path, task_raw = _resolve_legacy_task(task_path, _read_toml(task_path))
+    baseline_path = Path(baseline).resolve() if baseline is not None else _default_baseline(task_path)
+    raw = _deep_merge(_read_toml(baseline_path), task_raw)
     for item in overrides:
         key, separator, value = item.partition("=")
         section, dot, name = key.partition(".")

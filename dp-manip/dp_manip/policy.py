@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 from .conditional_unet1d import ConditionalUnet1D
-from .config import PolicyConfig, VisionConfig
+from .config import DiffusionConfig, PolicyConfig, VisionConfig
 from .data import NormalizationStats
 from .vision import ResNet18Encoder, random_shift
 
@@ -20,6 +20,7 @@ class DiffusionPolicy(nn.Module):
         self,
         policy_cfg: PolicyConfig,
         vision_cfg: VisionConfig,
+        diffusion_cfg: DiffusionConfig,
         *,
         image_shape: tuple[int, int, int],
         proprio_dim: int,
@@ -35,7 +36,7 @@ class DiffusionPolicy(nn.Module):
         self.pred_horizon = policy_cfg.pred_horizon
         self.action_dim = action_dim
         self.num_cameras = channels // 3
-        self.num_inference_iters = policy_cfg.num_inference_iters
+        self.num_inference_iters = diffusion_cfg.num_inference_iters
         self.random_shift_pad = vision_cfg.random_shift
         self.share_camera_encoder = vision_cfg.share_camera_encoder
 
@@ -55,7 +56,7 @@ class DiffusionPolicy(nn.Module):
             n_groups=policy_cfg.n_groups,
         )
         self.noise_scheduler = DDPMScheduler(
-            num_train_timesteps=policy_cfg.num_diffusion_iters,
+            num_train_timesteps=diffusion_cfg.num_diffusion_iters,
             beta_schedule="squaredcos_cap_v2",
             clip_sample=True,
             prediction_type="epsilon",

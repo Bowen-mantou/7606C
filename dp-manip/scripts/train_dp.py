@@ -167,6 +167,8 @@ def main() -> int:
         cfg.data.num_demos = args.num_demos
     if args.seed is not None:
         cfg.train.seed = args.seed
+    if args.data_root is not None:
+        cfg.data.root = str(args.data_root)
     cfg.validate()
 
     device = torch.device(args.device)
@@ -174,7 +176,7 @@ def main() -> int:
         raise RuntimeError("CUDA was requested but is unavailable; cluster training must run on a GPU node")
     seed_everything(cfg.train.seed)
 
-    data_root = (args.data_root or Path(cfg.data.root)).expanduser()
+    data_root = Path(cfg.data.root).expanduser()
     if not data_root.is_absolute():
         data_root = ROOT / data_root
     train_info = read_dataset_info(
@@ -221,6 +223,7 @@ def main() -> int:
     policy = DiffusionPolicy(
         cfg.policy,
         cfg.vision,
+        cfg.diffusion,
         image_shape=train_info.image_shape,
         proprio_dim=train_info.proprio_dim,
         action_dim=train_info.action_dim,
@@ -240,14 +243,14 @@ def main() -> int:
     )
     use_amp = cfg.train.amp and device.type == "cuda"
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
-    ema = ExponentialMovingAverage(policy, cfg.train.ema_decay)
+    ema = ExponentialMovingAverage(policy, cfg.ema.decay)
     start_step = 0
 
     if resume_path.is_file():
         if args.resume == "never":
             raise FileExistsError(f"{resume_path} exists; use --resume auto or choose another experiment")
         resume = torch.load(resume_path, map_location=device, weights_only=False)
-        if resume["config"] != cfg.to_dict():
+        if config_lib.from_dict(resume["config"]).to_dict() != cfg.to_dict():
             raise ValueError("resume checkpoint config differs from this invocation")
         policy.load_state_dict(resume["model"])
         optimizer.load_state_dict(resume["optimizer"])
