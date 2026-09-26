@@ -15,10 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dp_manip.config import from_dict  # noqa: E402
-from dp_manip.data import NormalizationStats  # noqa: E402
 from dp_manip.envs import make_eval_envs  # noqa: E402
 from dp_manip.evaluate import evaluate  # noqa: E402
-from dp_manip.policy import DiffusionPolicy, load_policy_state_dict  # noqa: E402
+from dp_manip.policy import DiffusionPolicy  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,17 +40,7 @@ def main() -> None:
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     cfg = from_dict(checkpoint["config"])
     train_data = checkpoint["train_data"]
-    stats = NormalizationStats.from_dict(checkpoint["normalization"])
-    policy = DiffusionPolicy(
-        cfg.policy,
-        cfg.vision,
-        cfg.diffusion,
-        image_shape=tuple(train_data["image_shape"]),
-        proprio_dim=int(train_data["proprio_dim"]),
-        action_dim=int(train_data["action_dim"]),
-        stats=stats,
-    ).to(device)
-    load_policy_state_dict(policy, checkpoint["model"])
+    policy = DiffusionPolicy.from_checkpoint(checkpoint, device)
     policy.eval()
 
     if args.split == "test":

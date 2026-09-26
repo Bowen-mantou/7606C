@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Any, Mapping
 
 import torch
 import torch.nn as nn
@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 from .backbones import build_noise_predictor
-from .config import DiffusionConfig, PolicyConfig, VisionConfig
+from .config import DiffusionConfig, PolicyConfig, VisionConfig, from_dict
 from .data import NormalizationStats
 from .observation_encoder import ObservationEncoder
 
@@ -61,6 +61,33 @@ class DiffusionPolicy(nn.Module):
 
     def normalize_action(self, action: torch.Tensor) -> torch.Tensor:
         return 2.0 * (action - self.action_low) / (self.action_high - self.action_low) - 1.0
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint: Mapping[str, Any],
+        device: str | torch.device = "cpu",
+    ) -> "DiffusionPolicy":
+        """Build an inference policy from a training checkpoint payload.
+
+        This is the single loader used by ``scripts/eval_dp.py`` and the
+        lifecycle tests, so every consumer reads the config, normalization
+        stats, dataset shapes and (possibly legacy) model keys exactly the way
+        the trainer wrote them.
+        """
+        cfg = from_dict(checkpoint["config"])
+        train_data = checkpoint["train_data"]
+        policy = cls(
+            cfg.policy,
+            cfg.vision,
+            cfg.diffusion,
+            image_shape=tuple(train_data["image_shape"]),
+            proprio_dim=int(train_data["proprio_dim"]),
+            action_dim=int(train_data["action_dim"]),
+            stats=NormalizationStats.from_dict(checkpoint["normalization"]),
+        )
+        load_policy_state_dict(policy, checkpoint["model"])
+        return policy.to(device)
 
     def unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
         return (action + 1.0) * 0.5 * (self.action_high - self.action_low) + self.action_low
