@@ -21,6 +21,14 @@ diffusion_step_embed_dim = 256
 unet_dims = [256, 512, 1024]
 kernel_size = 5
 n_groups = 8
+# Transformer backbone structure (donor: VariDP DP-T lowdim configuration).
+transformer_layers = 8
+transformer_heads = 4
+transformer_embed_dim = 256
+transformer_dropout_emb = 0.0
+transformer_dropout_attn = 0.3
+transformer_causal_attn = true
+transformer_cond_layers = 0
 
 [train]
 seed = 1

@@ -34,5 +34,15 @@
   Phase 0 manifest 升到 schema version 2，仅新增结构选择器记录，不改任何超参。
   本机 CPU 合成数据实测 train→save→load→get_action 与 legacy resume 通过，
   loss 与 Phase 6 逐位一致。
+- Phase 9 已从 VariDP 迁移 Transformer backbone（`dp_manip/backbones/transformer.py`）：
+  忠实移植官方 `TransformerForDiffusion` 与 VariDP 的 DP-T lowdim 配置（8 层 / 4 头 /
+  256 维 / causal attention / attn dropout 0.3），`TransformerBackbone` 把共享
+  observation encoder 产出的 `(B, To, Dobs)` 原样作为条件 token 送入 decoder，不重新
+  编码 RGB/proprio，也不引入 VariDP 的 trainer/dataset/scheduler。结构参数
+  `policy.transformer_*` 来自 `baseline.toml`，与 UNet arm 的 resolved config 只在
+  `policy.backbone` 上不同。Phase 0 manifest 升到 schema version 3，仅新增 Transformer
+  结构字段，不改任何科学超参。本机 CPU 合成数据实测 transformer arm 的
+  train→save→resume→load→get_action 通过，`tests/test_backbone_smoke.py` 覆盖
+  forward/backward/optimizer step/sampling。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

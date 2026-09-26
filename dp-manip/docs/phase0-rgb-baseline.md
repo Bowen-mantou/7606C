@@ -21,6 +21,11 @@ Phase 7 amended the manifest to schema version 2 by adding the structural select
 `policy.backbone = "unet"` under `canonical_config.policy`. No scientific hyperparameter
 value changed; the selector only records which noise-prediction backbone is canonical.
 
+Phase 9 amended the manifest to schema version 3 by recording the donor Transformer
+structure (`policy.transformer_layers/heads/embed_dim/dropout_emb/dropout_attn/
+causal_attn/cond_layers`) migrated from VariDP. The fields are architecture definitions,
+not scientific hyperparameters, and every arm resolves the same baseline values.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

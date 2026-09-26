@@ -1,11 +1,15 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "reference_commit": "834be805df77bd53043bf7270da3fef0fab38d55",
   "captured_at": "2026-09-26T15:56:29+08:00",
   "amendments": [
     {
       "phase": 7,
       "change": "canonical_config.policy gained the structural selector policy.backbone=unet; no scientific hyperparameter changed"
+    },
+    {
+      "phase": 9,
+      "change": "canonical_config.policy gained the donor Transformer structure (transformer_layers/heads/embed_dim/dropouts/causal_attn/cond_layers); no scientific hyperparameter changed"
     }
   ],
   "canonical_config": {
@@ -37,7 +41,14 @@
       "diffusion_step_embed_dim": 256,
       "unet_dims": [256, 512, 1024],
       "kernel_size": 5,
-      "n_groups": 8
+      "n_groups": 8,
+      "transformer_layers": 8,
+      "transformer_heads": 4,
+      "transformer_embed_dim": 256,
+      "transformer_dropout_emb": 0.0,
+      "transformer_dropout_attn": 0.3,
+      "transformer_causal_attn": true,
+      "transformer_cond_layers": 0
     },
     "train": {
       "seed": 1,

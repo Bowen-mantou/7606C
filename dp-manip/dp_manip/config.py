@@ -49,6 +49,18 @@ class PolicyConfig:
     # canonical UNet so checkpoints written before the backbone interface load
     # unchanged.
     backbone: str = "unet"
+    # Backbone architecture definitions, not scientific hyperparameters. Every
+    # arm resolves the same baseline values and ``backbone`` selects which group
+    # is consumed, so a backbone comparison changes only the selector. Defaults
+    # are the donor configurations from VariDP, which also lets checkpoints
+    # written before Phase 9 resolve with their original structure.
+    transformer_layers: int = 8
+    transformer_heads: int = 4
+    transformer_embed_dim: int = 256
+    transformer_dropout_emb: float = 0.0
+    transformer_dropout_attn: float = 0.3
+    transformer_causal_attn: bool = True
+    transformer_cond_layers: int = 0
 
 
 @dataclass
@@ -118,6 +130,24 @@ class Config:
         policy = self.policy
         if not isinstance(policy.backbone, str) or not policy.backbone:
             raise ValueError("policy.backbone must be a non-empty string")
+        if policy.transformer_layers < 1 or policy.transformer_heads < 1:
+            raise ValueError(
+                "policy.transformer_layers and policy.transformer_heads must be positive"
+            )
+        if (
+            policy.transformer_embed_dim < 2
+            or policy.transformer_embed_dim % 2
+            or policy.transformer_embed_dim % policy.transformer_heads
+        ):
+            raise ValueError(
+                "policy.transformer_embed_dim must be an even positive multiple of "
+                "policy.transformer_heads"
+            )
+        for name in ("transformer_dropout_emb", "transformer_dropout_attn"):
+            if not 0.0 <= getattr(policy, name) < 1.0:
+                raise ValueError(f"policy.{name} must be in [0, 1)")
+        if policy.transformer_cond_layers < 0:
+            raise ValueError("policy.transformer_cond_layers must be non-negative")
         if min(policy.obs_horizon, policy.act_horizon, policy.pred_horizon) < 1:
             raise ValueError("all horizons must be positive")
         if policy.obs_horizon + policy.act_horizon - 1 > policy.pred_horizon:

@@ -17,7 +17,12 @@ try:
     import numpy as np
     import torch
 
-    from dp_manip.backbones import NoisePredictor, UNetBackbone, build_noise_predictor
+    from dp_manip.backbones import (
+        NoisePredictor,
+        TransformerBackbone,
+        UNetBackbone,
+        build_noise_predictor,
+    )
     from dp_manip.data import NormalizationStats
     from dp_manip.policy import DiffusionPolicy, load_policy_state_dict
 except ModuleNotFoundError:  # torch is only installed in the cluster environment
@@ -26,6 +31,20 @@ else:
     HAVE_TORCH = True
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def config_diff(left: dict, right: dict, prefix: str = "") -> dict:
+    """Return dotted paths whose values differ between two resolved configs."""
+    differences = {}
+    for key in sorted(set(left) | set(right)):
+        path = f"{prefix}.{key}" if prefix else key
+        if key not in left or key not in right:
+            differences[path] = (left.get(key), right.get(key))
+        elif isinstance(left[key], dict) and isinstance(right[key], dict):
+            differences.update(config_diff(left[key], right[key], path))
+        elif left[key] != right[key]:
+            differences[path] = (left[key], right[key])
+    return differences
 
 
 def make_policy_config(**overrides) -> "PolicyConfig":
@@ -37,6 +56,11 @@ def make_policy_config(**overrides) -> "PolicyConfig":
         unet_dims=[16, 32],
         kernel_size=3,
         n_groups=4,
+        transformer_layers=1,
+        transformer_heads=2,
+        transformer_embed_dim=8,
+        transformer_dropout_emb=0.0,
+        transformer_dropout_attn=0.0,
     )
     values.update(overrides)
     return PolicyConfig(**values)
@@ -71,30 +95,49 @@ def make_observations(policy: "DiffusionPolicy", batch: int = 2):
 
 @unittest.skipUnless(HAVE_TORCH, "requires the cluster torch environment")
 class NoisePredictorInterfaceTest(unittest.TestCase):
+    BACKBONES = (
+        ("unet", UNetBackbone),
+        ("transformer", TransformerBackbone),
+    )
+
     def test_factory_builds_the_declared_backbone(self) -> None:
-        backbone = build_noise_predictor("unet", make_policy_config(), obs_dim=21, action_dim=4)
-        self.assertIsInstance(backbone, NoisePredictor)
-        self.assertIsInstance(backbone, UNetBackbone)
+        for name, expected in self.BACKBONES:
+            with self.subTest(backbone=name):
+                backbone = build_noise_predictor(
+                    name, make_policy_config(), obs_dim=21, action_dim=4
+                )
+                self.assertIsInstance(backbone, NoisePredictor)
+                self.assertIsInstance(backbone, expected)
 
     def test_unknown_backbone_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown policy.backbone"):
             build_noise_predictor("banana", make_policy_config(), obs_dim=21, action_dim=4)
 
-    def test_unet_backbone_implements_the_contract(self) -> None:
-        backbone = UNetBackbone(make_policy_config(), obs_dim=21, action_dim=4)
-        prediction = backbone(
-            torch.randn(3, 4, 4), torch.tensor([0, 1, 2]), torch.randn(3, 2, 21)
-        )
-        self.assertEqual(prediction.shape, (3, 4, 4))
-        self.assertTrue(torch.isfinite(prediction).all())
+    def test_each_backbone_implements_the_contract(self) -> None:
+        for name, _ in self.BACKBONES:
+            with self.subTest(backbone=name):
+                backbone = build_noise_predictor(
+                    name, make_policy_config(), obs_dim=21, action_dim=4
+                )
+                prediction = backbone(
+                    torch.randn(3, 4, 4), torch.tensor([0, 1, 2]), torch.randn(3, 2, 21)
+                )
+                self.assertEqual(prediction.shape, (3, 4, 4))
+                self.assertTrue(torch.isfinite(prediction).all())
 
     def test_backbone_structure_comes_from_policy_config(self) -> None:
-        small = UNetBackbone(make_policy_config(unet_dims=[16, 32]), obs_dim=21, action_dim=4)
-        large = UNetBackbone(make_policy_config(unet_dims=[32, 64]), obs_dim=21, action_dim=4)
-        self.assertLess(
-            sum(parameter.numel() for parameter in small.parameters()),
-            sum(parameter.numel() for parameter in large.parameters()),
+        cases = (
+            (UNetBackbone, {"unet_dims": [16, 32]}, {"unet_dims": [32, 64]}),
+            (TransformerBackbone, {"transformer_layers": 1}, {"transformer_layers": 2}),
         )
+        for backbone_cls, small_overrides, large_overrides in cases:
+            with self.subTest(backbone=backbone_cls.__name__):
+                small = backbone_cls(make_policy_config(**small_overrides), obs_dim=21, action_dim=4)
+                large = backbone_cls(make_policy_config(**large_overrides), obs_dim=21, action_dim=4)
+                self.assertLess(
+                    sum(parameter.numel() for parameter in small.parameters()),
+                    sum(parameter.numel() for parameter in large.parameters()),
+                )
 
 
 @unittest.skipUnless(HAVE_TORCH, "requires the cluster torch environment")
@@ -156,6 +199,50 @@ class BackboneConfigTest(unittest.TestCase):
     def test_resolved_config_selects_the_canonical_unet(self) -> None:
         resolved = load(ROOT / "configs" / "tasks" / "pickcube.toml")
         self.assertEqual(resolved.policy.backbone, "unet")
+
+    def test_backbone_arms_differ_only_in_the_selector(self) -> None:
+        # Gate B: switching arms must not move a single scientific or structural
+        # value; only ``policy.backbone`` may change.
+        base = load(ROOT / "configs" / "tasks" / "pickcube.toml").to_dict()
+        for name in ("transformer",):
+            with self.subTest(backbone=name):
+                arm = load(
+                    ROOT / "configs" / "tasks" / "pickcube.toml",
+                    [f'policy.backbone="{name}"'],
+                ).to_dict()
+                self.assertEqual(config_diff(base, arm), {"policy.backbone": ("unet", name)})
+
+    def test_pre_phase_nine_checkpoint_configs_keep_donor_defaults(self) -> None:
+        raw = load(ROOT / "configs" / "tasks" / "pickcube.toml").to_dict()
+        for name in (
+            "transformer_layers",
+            "transformer_heads",
+            "transformer_embed_dim",
+            "transformer_dropout_emb",
+            "transformer_dropout_attn",
+            "transformer_causal_attn",
+            "transformer_cond_layers",
+        ):
+            del raw["policy"][name]
+        policy = from_dict(raw).policy
+        self.assertEqual(policy.transformer_layers, 8)
+        self.assertEqual(policy.transformer_heads, 4)
+        self.assertEqual(policy.transformer_embed_dim, 256)
+        self.assertEqual(policy.transformer_dropout_emb, 0.0)
+        self.assertEqual(policy.transformer_dropout_attn, 0.3)
+        self.assertTrue(policy.transformer_causal_attn)
+        self.assertEqual(policy.transformer_cond_layers, 0)
+
+    def test_invalid_transformer_structure_is_rejected(self) -> None:
+        for override in (
+            "policy.transformer_heads=3",
+            "policy.transformer_embed_dim=7",
+            "policy.transformer_layers=0",
+            "policy.transformer_dropout_attn=1.0",
+            "policy.transformer_cond_layers=-1",
+        ):
+            with self.subTest(override=override), self.assertRaisesRegex(ValueError, "policy.transformer"):
+                load(ROOT / "configs" / "tasks" / "pickcube.toml", [override])
 
     def test_pre_interface_checkpoint_config_defaults_to_unet(self) -> None:
         raw = load(ROOT / "configs" / "tasks" / "pickcube.toml").to_dict()
