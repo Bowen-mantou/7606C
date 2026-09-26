@@ -291,6 +291,21 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return tomllib.load(stream)
 
 
+def resolve_config_path(name: str | Path, directory: str | Path, kind: str) -> Path:
+    """Resolve a short config name to ``<directory>/<name>.toml`` or an existing path.
+
+    Entry points own the directories (``configs/tasks``, ``configs/experiments``);
+    this helper only implements the name-or-path convention they share.
+    """
+    path = Path(name)
+    if path.is_file():
+        return path
+    candidate = Path(directory) / f"{name}.toml"
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(f"unknown {kind} {name!r}; expected {candidate} or an existing path")
+
+
 def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     merged = copy.deepcopy(base)
     for key, value in override.items():

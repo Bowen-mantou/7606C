@@ -71,17 +71,21 @@ traj_i/actions        float32 (T, A)
 # 2. 在提交作业前检查六套数据（DATA_ROOT 指向 demogen 的 data/dataset）
 .venv/bin/python scripts/inspect_dataset.py --data-root "$DATA_ROOT"
 
-# 3. 查看数组索引映射
+# 3. Gate B：确认每个实验矩阵的 resolved config 只在声明的实验变量上不同
+.venv/bin/python scripts/check_experiment.py --experiment data_size
+.venv/bin/python scripts/check_experiment.py --experiment backbone
+
+# 4. 查看数组索引映射
 .venv/bin/python scripts/sweep.py show
 
-# 4. 提交 96 个核心训练；%4 表示最多同时跑 4 个，可按配额调整
+# 5. 提交 96 个核心训练；%4 表示最多同时跑 4 个，可按配额调整
 sbatch --export=ALL,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
   slurm/train_array.sbatch
 
-# 5. 全部 final.pt 完成后，固定测试种子做闭环评估
+# 6. 全部 final.pt 完成后，固定测试种子做闭环评估
 sbatch --export=ALL,RUN_ROOT=/scratch/$USER/dp-runs slurm/eval_array.sbatch
 
-# 6. 轨道 B（backbone，90 项）：用 EXPERIMENT 选择 spec，--array 按 sweep.py show 的条数设置。
+# 7. 轨道 B（backbone，90 项）：用 EXPERIMENT 选择 spec，--array 按 sweep.py show 的条数设置。
 #    unet 格子与 data-size N=100 同目录，等第 4 步的 N=100 完成后再提交，完成的格子会直接跳过。
 .venv/bin/python scripts/sweep.py show --experiment configs/experiments/backbone.toml
 sbatch --array=0-89%4 \
@@ -157,6 +161,7 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
 - `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor。
 - `dp_manip/trainer.py`：唯一训练 pipeline（resume、采样器、日志、checkpoint、评估 loss）。
 - `scripts/run_experiment.py`：统一实验入口 `--task/--experiment/--value/--seed`，只解析 config。
+- `scripts/check_experiment.py`：Gate B checker：对比实验矩阵的 resolved config，输出 `control_hash`。
 - `scripts/train_dp.py`：Slurm sweep 用的薄 CLI，与统一入口共用 `dp_manip.trainer`。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
 - `scripts/sweep.py`、`slurm/`：任意 experiment spec 的数组作业（data-size 96 组、backbone 90 组、条件 N=400）。

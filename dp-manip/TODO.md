@@ -8,7 +8,8 @@
 4. 在集群验证 `USR1 → resume.pt → requeue` 一次：确认日志出现
    `restored Python/NumPy/torch CPU/CUDA RNG state`，并跑通
    `tests/test_rng_resume.py`（含 CUDA RNG）。
-5. 提交核心 96 组训练和固定测试评估。
+5. 用 `scripts/check_experiment.py --experiment data_size` 和 `--experiment backbone`
+   做一次 Gate B drift 检查，再提交核心 96 组训练和固定测试评估。
 6. 汇总成功率并按预注册规则判断哪些任务增加 N=400。
 
 不要在拿到结果后更改 N 档、训练 seed 数、测试种子或 100k 步预算。

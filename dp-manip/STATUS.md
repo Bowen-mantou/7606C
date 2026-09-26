@@ -74,5 +74,14 @@
   data_size N=25 与 backbone unet/transformer/mlp 三 arm 均经统一入口完成
   train→save→resume→load→get_action，三个 backbone run config 只在 `policy.backbone`
   上不同（Gate B）。
+- Phase 13 已实现 Gate B 自动检查器 `scripts/check_experiment.py`：对每个任务解析 experiment
+  spec 声明的全部 `(value, seed)` cell 并逐一对比 resolved config，只允许声明的实验变量、
+  replicate seed（`train.seed`）、运行时 `data.root` 和 backbone 结构键
+  （`policy.unet_*` / `policy.transformer_*` / `policy.mlp_*`）不同，其余差异按 per-key
+  矩阵格式报错并返回非零状态；同时按 §19 输出每个任务的 `control_hash`（同一矩阵所有 cell
+  必须相同）。`dp_manip.config.resolve_config_path` 抽出了入口共用的 name-or-path 解析。
+  `tests/test_check_experiment.py` 覆盖 diff/prune/control_hash、真实三套矩阵
+  （data_size / data_size_optional400 / backbone，六任务共 216 cells）、drift 报告格式与
+  CLI 退出码；本机实测三套矩阵全部 `Gate B ok`。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

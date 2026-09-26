@@ -59,3 +59,14 @@ spec 里声明的整数；`scripts/train_dp.py --experiment-value` 也接受同�
 `--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是最后应用的运行时覆盖。
 集群上可用 `--data-root` 覆盖数据根目录。临时 smoke 可用
 `--set train.total_iters=...`；正式实验仍使用 baseline 的固定训练预算。
+
+提交正式实验前，用 `scripts/check_experiment.py` 自动做 Gate B 检查：它解析 spec 声明的
+所有 `(value, seed)` cell，只允许声明的实验变量、replicate seed、运行时 `data.root` 和
+`policy.unet_*` / `policy.transformer_*` / `policy.mlp_*` 结构参数不同，其余差异以 per-key
+矩阵报错并返回非零状态；同时按 Phase 13/§19 输出每个任务的 `control_hash`（同一矩阵的
+所有 cell 必须相同）。
+
+```bash
+python scripts/check_experiment.py --experiment data_size
+python scripts/check_experiment.py --experiment backbone
+```

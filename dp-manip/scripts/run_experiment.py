@@ -53,22 +53,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def resolve_path(name: str, directory: Path, kind: str) -> Path:
-    path = Path(name)
-    if path.is_file():
-        return path
-    candidate = directory / f"{name}.toml"
-    if candidate.is_file():
-        return candidate
-    raise FileNotFoundError(f"unknown {kind} {name!r}; expected {candidate} or an existing path")
-
-
 def resolve_config(args: argparse.Namespace) -> Config:
     """Resolve baseline -> task -> experiment(value) -> runtime seed/data."""
     cfg = config_lib.load(
-        resolve_path(args.task, TASKS_DIR, "task"),
+        config_lib.resolve_config_path(args.task, TASKS_DIR, "task"),
         args.overrides,
-        experiment=resolve_path(args.experiment, EXPERIMENTS_DIR, "experiment"),
+        experiment=config_lib.resolve_config_path(args.experiment, EXPERIMENTS_DIR, "experiment"),
         experiment_value=args.value,
     )
     if args.num_demos is not None:
