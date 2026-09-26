@@ -35,7 +35,12 @@ from dp_manip.data import (  # noqa: E402
     compute_normalization,
     read_dataset_info,
 )
-from dp_manip.policy import DiffusionPolicy, load_policy_state_dict, num_params  # noqa: E402
+from dp_manip.policy import (  # noqa: E402
+    DiffusionPolicy,
+    adapt_legacy_state_dict,
+    load_policy_state_dict,
+    num_params,
+)
 from dp_manip.training import (  # noqa: E402
     ExponentialMovingAverage,
     StepSeededIndexSampler,
@@ -269,7 +274,11 @@ def main() -> int:
         optimizer.load_state_dict(resume["optimizer"])
         scheduler.load_state_dict(resume["scheduler"])
         scaler.load_state_dict(resume["scaler"])
-        ema.load_state_dict(resume["ema"], policy)
+        ema_state = resume["ema"]
+        # Resume checkpoints written before the ObservationEncoder extraction
+        # name trainable parameters without the ``observation_encoder.`` prefix.
+        ema_state["shadow"] = adapt_legacy_state_dict(ema_state["shadow"])
+        ema.load_state_dict(ema_state, policy)
         start_step = int(resume["step"])
         if set_rng_state(resume.get("rng")):
             print("restored Python/NumPy/torch CPU/CUDA RNG state from resume.pt")

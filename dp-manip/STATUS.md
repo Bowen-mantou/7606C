@@ -18,5 +18,13 @@
   连续训练与被抢占续训的随机轨迹一致。已在本机 CPU 上用合成数据实测
   `SIGUSR1 → resume.pt → 续训`：final EMA 权重与 raw model/optimizer state 均与
   连续训练 bitwise 相同。旧 `resume.pt` 缺少 `rng` 字段时仍可续训并打印 warning。
+- Phase 6 已把 observation encoding 抽成独立 `ObservationEncoder`
+  （`dp_manip/observation_encoder.py`）：统一接口 `observation_encoder(rgb, proprio)`
+  固定返回 `(B, To, Dobs)`，`Dobs = num_cameras * feature_dim + proprio_dim`；policy 只在
+  交给 Conditional UNet 前 flatten，encoder 不感知 UNet/Transformer/MLP。
+  `tests/test_observation_encoder.py` 验证输出 shape、RGB+proprio 融合、
+  share/per-camera encoder、policy 边界 flatten，以及旧 checkpoint
+  （`image_encoders.*`、`state_*`/`proprio_*` → `observation_encoder.*`）仍可加载。
+  本机 CPU 用合成数据实测 `train → save → load → get_action` 和 legacy-key resume 全部通过。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
-  本机临时 venv 仅用于 `tests/test_rng_resume.py` 的 CPU 验证，不是项目环境。
+  本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。
