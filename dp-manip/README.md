@@ -112,6 +112,8 @@ runs/<task>_rgb_unet_n<N>_s<seed>/
 - `scripts/train_dp.py`：可恢复的集群训练入口。
 - `scripts/eval_dp.py`：固定种子 RGB 闭环评估。
 - `scripts/sweep.py`、`slurm/`：核心 96 组与条件 N=400 的数组作业。
+- `baselines/phase0/pickcube_rgb.json`：重构前 RGB baseline 的机器可读 regression reference。
+- `docs/phase0-rgb-baseline.md`：Phase 0 行为清单、真实 smoke 结果和复现命令。
 - `PLAN.md`：数据量实验矩阵和运行口径。
 
 旧的本地 state-based 试验记录保留在 `docs/`，只作历史参考；本 README、`PLAN.md` 和

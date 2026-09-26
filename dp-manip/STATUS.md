@@ -5,5 +5,7 @@
 - 训练已改为集群优先：HDF5 懒加载、worker DataLoader、AMP、EMA、可恢复 checkpoint。
 - Slurm 核心 96 组与条件 N=400 数组入口已建立。
 - 闭环评估已改为 RGB 环境，并固定使用与数据一致的 `physx_cpu`。
-- 本机没有项目的 torch/ManiSkill 环境；这里只能做静态检查。真实数据检查、GPU smoke 和
-  ManiSkill rollout 必须在集群环境完成。
+- Phase 0 已冻结 commit `834be80` 的 PickCube RGB baseline，并实测完成最小
+  `train → save → load → evaluate` 链路；manifest 见
+  `baselines/phase0/pickcube_rgb.json`。
+- 本机没有项目的 torch/ManiSkill 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
