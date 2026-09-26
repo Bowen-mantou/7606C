@@ -336,7 +336,16 @@ def _parse_override(item: str) -> tuple[str, Any]:
 
 def load_experiment(path: str | Path) -> ExperimentSpec:
     """Load a sweep definition without leaking its grid into core config code."""
+    return _parse_experiment(_read_toml(Path(path)))
+
+
+def load_experiment_optional(path: str | Path) -> ExperimentSpec | None:
+    """Return the spec declared by a TOML file, or ``None`` for plain overrides."""
     raw = _read_toml(Path(path))
+    return _parse_experiment(raw) if "experiment" in raw else None
+
+
+def _parse_experiment(raw: dict[str, Any]) -> ExperimentSpec:
     unknown = set(raw) - {"experiment", "replicates", "diagnostics"}
     if unknown:
         raise ValueError(f"unknown experiment sections: {sorted(unknown)}")
@@ -453,7 +462,7 @@ def load(
             experiment_path = Path(experiment).resolve()
             experiment_raw = _read_toml(experiment_path)
             if "experiment" in experiment_raw:
-                spec = load_experiment(experiment_path)
+                spec = _parse_experiment(experiment_raw)
                 if experiment_value is None:
                     raise ValueError(f"experiment {spec.name!r} requires an experiment value")
                 experiment_value = match_experiment_value(spec, experiment_value)

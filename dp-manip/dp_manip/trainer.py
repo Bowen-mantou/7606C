@@ -13,7 +13,9 @@ import platform
 import random
 import signal
 import time
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -28,6 +30,7 @@ from .data import (
     compute_normalization,
     read_dataset_info,
 )
+from .metadata import dataset_fingerprint, git_revision
 from .policy import (
     DiffusionPolicy,
     adapt_legacy_state_dict,
@@ -89,6 +92,7 @@ def dataset_record(info: DatasetInfo) -> dict:
         "action_dim": info.action_dim,
         "cameras": list(info.cameras),
         "rgb_env_info": info.rgb_env_info,
+        "fingerprint": dataset_fingerprint(info),
     }
 
 
@@ -153,8 +157,13 @@ def run_training(
     run_name: str | None = None,
     device: str = "cuda",
     resume: str = "auto",
+    experiment_context: Mapping[str, Any] | None = None,
 ) -> int:
     """Train, checkpoint and validate one resolved configuration.
+
+    ``experiment_context`` carries the declared cell metadata (experiment
+    name/variable/value and the control hash) from the entry point into
+    ``run.json``; it is ``None`` for runs outside an experiment grid.
 
     Returns ``0`` on completion, ``75`` after a scheduler signal wrote
     ``resume.pt`` (the Slurm requeue convention), or ``0`` immediately when
@@ -303,7 +312,11 @@ def run_training(
 
     run_info = {
         "experiment": experiment,
+        # Declared experiment cell (name/variable/value/seed/control_hash), so a
+        # run can be audited without re-deriving the grid.
+        "experiment_context": experiment_context,
         "config": cfg.to_dict(),
+        "git": git_revision(ROOT),
         "train_data": dataset_record(train_info),
         "val_data": dataset_record(val_info),
         # The data-size experiment compares nested subsets; record exactly which
@@ -429,6 +442,7 @@ def run_training(
     elapsed = time.time() - start_time
     summary = {
         "experiment": experiment,
+        "control_hash": (experiment_context or {}).get("control_hash"),
         "final_step": cfg.train.total_iters,
         "final_train_loss": last_loss,
         "wall_time_s_this_invocation": elapsed,

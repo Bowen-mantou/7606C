@@ -1,9 +1,10 @@
-"""Phase 13 regression tests: Gate B is checked, not just documented.
+"""Phase 13-14 regression tests: Gate B is checked, not just documented.
 
 The checker compares every resolved cell of an experiment matrix against one
-reference and reports any difference outside the declared variable, replicate
-seed, runtime paths and architecture definitions. The declared data-size and
-backbone matrices must pass their own check.
+reference and reports any difference outside the declared differences defined
+in ``dp_manip.invariants``. It can also audit the configs that runs actually
+recorded in ``run.json``. The declared data-size and backbone matrices must
+pass their own check.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import unittest
 from pathlib import Path
 
 from dp_manip.config import default_run_name, load, load_experiment
+from dp_manip.invariants import allowed_keys, config_differences, control_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "configs" / "tasks"
@@ -32,29 +34,6 @@ def load_checker():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
-
-
-class ConfigDifferenceTest(unittest.TestCase):
-    def test_nested_differences_are_reported_by_dotted_path(self) -> None:
-        checker = load_checker()
-        left = {"train": {"seed": 1, "batch_size": 64}, "policy": {"backbone": "unet"}}
-        right = {"train": {"seed": 2, "batch_size": 128}, "policy": {"backbone": "mlp"}}
-        self.assertEqual(
-            checker.config_differences(left, right),
-            {
-                "policy.backbone": ("unet", "mlp"),
-                "train.batch_size": (64, 128),
-                "train.seed": (1, 2),
-            },
-        )
-
-    def test_without_keys_prunes_only_the_allowed_paths(self) -> None:
-        checker = load_checker()
-        raw = {"train": {"seed": 1, "batch_size": 64}, "data": {"root": "/a", "num_demos": 100}}
-        self.assertEqual(
-            checker.without_keys(raw, {"train.seed", "data.root"}),
-            {"train": {"batch_size": 64}, "data": {"num_demos": 100}},
-        )
 
 
 class MatrixCheckTest(unittest.TestCase):
@@ -80,31 +59,17 @@ class MatrixCheckTest(unittest.TestCase):
         self.assertEqual(drifts[0].cell_label, "unet s2")
         self.assertEqual(drifts[0].cell_value, 128)
 
-    def test_control_hash_ignores_allowed_keys_only(self) -> None:
-        allowed = {"train.seed", "policy.backbone"}
-        left = self.cell("unet", "train.seed=1")
-        arm = self.cell("transformer", "train.seed=2", "policy.backbone=transformer")
-        self.assertEqual(
-            self.checker.control_hash(left.config, allowed),
-            self.checker.control_hash(arm.config, allowed),
-        )
-        drifted = self.cell("batch", "train.seed=2", "train.batch_size=128")
-        self.assertNotEqual(
-            self.checker.control_hash(left.config, allowed),
-            self.checker.control_hash(drifted.config, allowed),
-        )
-
     def test_declared_matrices_have_no_drift(self) -> None:
         for name in ("data_size", "data_size_optional400", "backbone"):
             experiment = EXPERIMENTS / f"{name}.toml"
             spec = load_experiment(experiment)
-            allowed = self.checker.allowed_keys(spec)
+            allowed = allowed_keys(spec)
             for task_path in sorted(TASKS.glob("*.toml")):
                 with self.subTest(experiment=name, task=task_path.stem):
                     cells = self.checker.matrix_cells(task_path, experiment, spec)
                     self.assertGreaterEqual(len(cells), 2)
                     self.assertEqual(self.checker.check_cells(cells, allowed), [])
-                    hashes = {self.checker.control_hash(cell.config, allowed) for cell in cells}
+                    hashes = {control_hash(cell.config, allowed) for cell in cells}
                     self.assertEqual(len(hashes), 1)
 
     def test_drift_report_matches_the_plan_format(self) -> None:
@@ -135,20 +100,6 @@ class MatrixCheckTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
             status = checker.main(["--experiment", "data_size", "--task", "pickcube", "--seed", "9"])
         self.assertEqual(status, 1)
-
-    def test_structural_keys_are_only_allowed_in_the_backbone_experiment(self) -> None:
-        structural = {"policy.unet_dims", "policy.mlp_hidden_dim", "policy.transformer_layers"}
-        backbone = self.checker.allowed_keys(load_experiment(EXPERIMENTS / "backbone.toml"))
-        data_size = self.checker.allowed_keys(load_experiment(EXPERIMENTS / "data_size.toml"))
-        self.assertTrue(structural <= backbone)
-        self.assertFalse(structural & data_size)
-
-        cells = [
-            self.cell("100 s1", "train.seed=1"),
-            self.cell("200 s1", "train.seed=1", "data.num_demos=200", "policy.unet_dims=[128, 256]"),
-        ]
-        drifts = self.checker.check_cells(cells, data_size)
-        self.assertEqual([drift.key for drift in drifts], ["policy.unet_dims"])
 
     def test_run_root_checks_the_recorded_configs(self) -> None:
         checker = load_checker()
@@ -213,6 +164,14 @@ class MatrixCheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             status, _ = run(Path(directory))
             self.assertEqual(status, 1)
+
+    def test_runtime_root_does_not_count_as_mismatch(self) -> None:
+        # ``data.root`` is runtime metadata: a moved dataset root must not fail
+        # the recorded-config check.
+        left = load(TASKS / "pickcube.toml")
+        right = load(TASKS / "pickcube.toml", ["data.root=/scratch/other"])
+        differences = config_differences(left.to_dict(), right.to_dict())
+        self.assertEqual(set(differences), {"data.root"})
 
     def test_cli_reports_unknown_task_and_experiment(self) -> None:
         checker = load_checker()

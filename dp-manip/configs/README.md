@@ -76,3 +76,7 @@ python scripts/check_experiment.py --experiment data_size
 python scripts/check_experiment.py --experiment backbone
 python scripts/check_experiment.py --experiment backbone --run-root /scratch/$USER/dp-runs
 ```
+
+每个 run 的 `run.json` 也会记录 Phase 14（§19）的 `experiment_context`（name / variable /
+value / seed / `control_hash`，与 checker 共用 `dp_manip.invariants` 的同一套规则）、
+`git` revision 和数据集 `fingerprint`，所以 `--run-root` 的对账和事后审计不需要重新推导实验网格。

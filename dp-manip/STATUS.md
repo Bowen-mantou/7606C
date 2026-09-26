@@ -85,5 +85,17 @@
   CLI 退出码；本机实测三套矩阵全部 `Gate B ok`。验收时补充：结构键豁免只在
   `policy.backbone` 实验生效；`--run-root` 读取各 cell 的 `run.json`，与其他 cell 和当前
   声明对比，并列出尚未运行的 cell（本机用带 `--set` 缩小预算的合成 run 实测能检出）。
+- Phase 14 已补齐 §19 的 run metadata：Gate B 语义（声明差异、config diff/prune、
+  `control_hash`）集中到 `dp_manip/invariants.py`，checker 与 trainer 共用；新增
+  `dp_manip/metadata.py` 记录 git commit/branch/dirty 和数据集 fingerprint（sidecar JSON
+  的 sha256 + H5 大小，避免每个 job 重新哈希数 GB 的 RGB）。`run.json` 现在包含
+  `experiment_context`（name / variable / value / seed / `control_hash`, 来自统一入口或
+  `train_dp.py` 的 spec 参数）、`git` 和 train/val `fingerprint`，checkpoint 的 train/val
+  记录同样带 fingerprint，`summary.json` 记录 `control_hash` 与训练时长；不在实验网格里的
+  普通 run 的 `experiment_context` 为 `null`。`config.load_experiment_optional` 给旧入口提供
+  同样的 context，且 `config.load` 不再重复读 spec 文件。`tests/test_invariants.py`、
+  `tests/test_metadata.py` 覆盖共享 helper、context 字段与三个 arm 同 hash；本机 CPU 合成数据
+  实测两个入口的 run.json / summary.json / checkpoint fingerprint 全部一致，三个 backbone
+  arm 共享同一个 `control_hash`。
 - 本机没有项目的 ManiSkill/GPU 环境；完整数据检查与正式 GPU smoke 仍需在集群完成。
   本机临时 venv（torch/diffusers/h5py）仅用于 CPU 单元测试与合成数据 smoke，不是项目环境。

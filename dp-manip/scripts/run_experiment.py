@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dp_manip import config as config_lib  # noqa: E402
+from dp_manip import invariants  # noqa: E402
 from dp_manip.config import Config  # noqa: E402
 
 
@@ -71,6 +72,13 @@ def resolve_config(args: argparse.Namespace) -> Config:
     return cfg
 
 
+def experiment_context(args: argparse.Namespace, cfg: Config) -> dict:
+    """Describe the declared cell this invocation resolves to (plan §19)."""
+    experiment_path = config_lib.resolve_config_path(args.experiment, EXPERIMENTS_DIR, "experiment")
+    spec = config_lib.load_experiment(experiment_path)
+    return invariants.experiment_context(cfg, spec, args.value, spec_path=experiment_path)
+
+
 def main() -> int:
     args = parse_args()
     cfg = resolve_config(args)
@@ -89,6 +97,7 @@ def main() -> int:
         run_name=args.exp,
         device=args.device,
         resume=args.resume,
+        experiment_context=experiment_context(args, cfg),
     )
 
 

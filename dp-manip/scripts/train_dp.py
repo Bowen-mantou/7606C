@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dp_manip import config as config_lib  # noqa: E402
+from dp_manip import invariants  # noqa: E402
 from dp_manip.config import Config  # noqa: E402
 
 
@@ -68,6 +69,16 @@ def resolve_config(args: argparse.Namespace) -> Config:
     return cfg
 
 
+def experiment_context(args: argparse.Namespace, cfg: Config) -> dict | None:
+    """Describe the declared cell when ``--experiment`` is a grid spec (plan §19)."""
+    if args.experiment is None or args.experiment_value is None:
+        return None
+    spec = config_lib.load_experiment_optional(args.experiment)
+    if spec is None:
+        return None
+    return invariants.experiment_context(cfg, spec, args.experiment_value, spec_path=args.experiment)
+
+
 def main() -> int:
     args = parse_args()
     cfg = resolve_config(args)
@@ -81,6 +92,7 @@ def main() -> int:
         run_name=args.exp,
         device=args.device,
         resume=args.resume,
+        experiment_context=experiment_context(args, cfg),
     )
 
 

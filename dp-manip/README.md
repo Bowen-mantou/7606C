@@ -151,6 +151,13 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
 
 中间 checkpoint 用于过拟合/训练进程分析；正式表格只使用 `final.pt`。
 
+`run.json` 保存完整的 resolved config、实际选中的示范 seed、归一化统计，以及 Phase 14
+（§19）的元数据：`experiment_context`（实验名 / variable / value / seed / `control_hash`）、
+`git`（commit / branch / dirty）和 train/val 数据集的 `fingerprint`。`control_hash` 由所有非
+实验变量的值生成，同一 experiment matrix 的同一任务下必须相同；`summary.json` 同样记录
+`control_hash` 和实际训练时长。`train_data`/`val_data`（包括 checkpoint 里的副本）也带回
+fingerprint，所以一个 checkpoint 能追溯到具体的数据文件。
+
 ## 代码导航
 
 - `dp_manip/data.py`：demogen schema 校验、流式统计、HDF5 懒加载 temporal windows。
@@ -160,6 +167,8 @@ runs/<task>_rgb_<backbone>_n<N>_s<seed>/   # backbone 目前为 unet / transform
   的 `UNetBackbone` 与从 VariDP 迁移的 `TransformerBackbone`、`MLPBackbone`。
 - `dp_manip/policy.py`：动作归一化、DDPM；把 `(B, To, Dobs)` 序列原样交给 noise predictor。
 - `dp_manip/trainer.py`：唯一训练 pipeline（resume、采样器、日志、checkpoint、评估 loss）。
+- `dp_manip/invariants.py`：Gate B 声明差异、config diff/prune 与 `control_hash`（checker 和 run 元数据共用）。
+- `dp_manip/metadata.py`：run 元数据辅助（git revision、dataset fingerprint）。
 - `scripts/run_experiment.py`：统一实验入口 `--task/--experiment/--value/--seed`，只解析 config。
 - `scripts/check_experiment.py`：Gate B checker：对比实验矩阵的 resolved config（`--run-root` 时对比实际 `run.json`），输出 `control_hash`。
 - `scripts/train_dp.py`：Slurm sweep 用的薄 CLI，与统一入口共用 `dp_manip.trainer`。
