@@ -5,7 +5,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from dp_manip.config import default_run_name, from_dict, load, load_experiment
+from dp_manip.config import default_run_name, from_dict, from_recorded, load, load_experiment, load_run
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -206,6 +206,70 @@ values = [10]
         self.assertEqual(default_run_name(unet), "pickcube_rgb_unet_n50_s2")
         other = load(task, ["data.num_demos=50", "train.seed=2", 'policy.backbone="transformer"'])
         self.assertEqual(default_run_name(other), "pickcube_rgb_transformer_n50_s2")
+
+    def test_recorded_configs_from_before_a_field_existed_still_load(self) -> None:
+        current = load(TASKS / "pickcube.toml").to_dict()
+        recorded = load(TASKS / "pickcube.toml").to_dict()
+        # A Phase 6 run: no backbone selector, no backbone structure, no betas.
+        del recorded["train"]["betas"]
+        for key in [key for key in recorded["policy"] if key.startswith(("transformer_", "mlp_"))]:
+            del recorded["policy"][key]
+        del recorded["policy"]["backbone"]
+
+        restored = from_recorded(recorded)
+        # These are the values those runs actually trained with, which match
+        # today's baseline, so an old resume.pt still equals a fresh config.
+        self.assertEqual(restored.train.betas, [0.95, 0.999])
+        self.assertEqual(restored.policy.backbone, "unet")
+        self.assertEqual(restored.to_dict(), current)
+
+        # Fresh configs get no such help: baseline.toml is the only source.
+        with self.assertRaisesRegex(ValueError, "missing .* required positional argument"):
+            from_dict(recorded)
+
+    def test_fresh_config_missing_a_baseline_value_is_rejected(self) -> None:
+        text = BASELINE.read_text(encoding="utf-8")
+        self.assertIn("betas = ", text)
+        stripped = "\n".join(line for line in text.splitlines() if not line.startswith("betas = "))
+        with tempfile.TemporaryDirectory() as directory:
+            baseline = Path(directory) / "baseline.toml"
+            baseline.write_text(stripped + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "betas"):
+                load(TASKS / "pickcube.toml", baseline=baseline)
+
+    def test_experiment_variable_cannot_be_overridden(self) -> None:
+        data_size = ROOT / "configs" / "experiments" / "data_size.toml"
+        backbone = ROOT / "configs" / "experiments" / "backbone.toml"
+        cases = (
+            (data_size, 25, {"overrides": ["data.num_demos=4"]}),
+            (data_size, 25, {"num_demos": 4}),
+            (backbone, "mlp", {"overrides": ['policy.backbone="unet"']}),
+        )
+        for experiment, value, runtime in cases:
+            with self.subTest(experiment=experiment.stem, runtime=runtime):
+                with self.assertRaisesRegex(ValueError, "is the variable of experiment"):
+                    load_run(
+                        TASKS / "pickcube.toml",
+                        runtime.get("overrides", ()),
+                        experiment=experiment,
+                        experiment_value=value,
+                        num_demos=runtime.get("num_demos"),
+                    )
+        # Other keys stay overridable, e.g. N_B=200 for a hard backbone task.
+        resolved = load_run(TASKS / "pickcube.toml", experiment=backbone, experiment_value="mlp", num_demos=200)
+        self.assertEqual((resolved.policy.backbone, resolved.data.num_demos), ("mlp", 200))
+
+    def test_load_run_applies_runtime_flags_after_overrides(self) -> None:
+        resolved = load_run(
+            TASKS / "pickcube.toml",
+            ["train.seed=7", "data.num_demos=10"],
+            num_demos=12,
+            seed=3,
+            data_root="/scratch/some dir/dataset",
+        )
+        self.assertEqual(resolved.train.seed, 3)
+        self.assertEqual(resolved.data.num_demos, 12)
+        self.assertEqual(resolved.data.root, "/scratch/some dir/dataset")
 
     def test_version_one_checkpoint_config_is_adapted(self) -> None:
         expected = load(TASKS / "pickcube.toml")

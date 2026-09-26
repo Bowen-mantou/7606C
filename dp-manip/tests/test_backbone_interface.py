@@ -8,10 +8,11 @@ still load through the legacy key mapping.
 
 from __future__ import annotations
 
+import dataclasses
 import unittest
 from pathlib import Path
 
-from dp_manip.config import DiffusionConfig, PolicyConfig, VisionConfig, from_dict, load
+from dp_manip.config import DiffusionConfig, PolicyConfig, VisionConfig, from_dict, from_recorded, load
 
 try:
     import numpy as np
@@ -50,7 +51,9 @@ def config_diff(left: dict, right: dict, prefix: str = "") -> dict:
 
 
 def make_policy_config(**overrides) -> "PolicyConfig":
-    values = dict(
+    # Every field comes from baseline.toml; only sizes shrink for fast tests.
+    values = dataclasses.asdict(load(ROOT / "configs" / "tasks" / "pickcube.toml").policy)
+    values.update(
         obs_horizon=2,
         act_horizon=2,
         pred_horizon=4,
@@ -260,7 +263,7 @@ class BackboneConfigTest(unittest.TestCase):
             "mlp_obs_feat_dim",
         ):
             del raw["policy"][name]
-        policy = from_dict(raw).policy
+        policy = from_recorded(raw).policy
         self.assertEqual(policy.transformer_layers, 8)
         self.assertEqual(policy.transformer_heads, 4)
         self.assertEqual(policy.transformer_embed_dim, 256)
@@ -298,7 +301,7 @@ class BackboneConfigTest(unittest.TestCase):
     def test_pre_interface_checkpoint_config_defaults_to_unet(self) -> None:
         raw = load(ROOT / "configs" / "tasks" / "pickcube.toml").to_dict()
         del raw["policy"]["backbone"]
-        self.assertEqual(from_dict(raw).policy.backbone, "unet")
+        self.assertEqual(from_recorded(raw).policy.backbone, "unet")
 
 
 if __name__ == "__main__":

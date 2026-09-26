@@ -134,7 +134,7 @@ def recorded_cells(
             missing.append(cell.label)
             continue
         raw = json.loads(path.read_text(encoding="utf-8"))["config"]
-        config = config_lib.from_dict(raw)
+        config = config_lib.from_recorded(raw)
         recorded.append(Cell(cell.label, config))
         differences = config_differences(cell.config.to_dict(), config.to_dict())
         for key, (declared_value, recorded_value) in differences.items():

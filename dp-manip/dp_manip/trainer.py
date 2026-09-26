@@ -219,7 +219,7 @@ def run_training(
         run_info_path = run_dir / "run.json"
         if run_info_path.is_file():
             finished = json.loads(run_info_path.read_text(encoding="utf-8"))["config"]
-            if config_lib.from_dict(finished).to_dict() != cfg.to_dict():
+            if config_lib.from_recorded(finished).to_dict() != cfg.to_dict():
                 raise FileExistsError(
                     f"{run_dir} holds a finished run with a different config; "
                     "choose another --exp or output root"
@@ -259,7 +259,7 @@ def run_training(
         if resume == "never":
             raise FileExistsError(f"{resume_path} exists; use --resume auto or choose another experiment")
         checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
-        if config_lib.from_dict(checkpoint["config"]).to_dict() != cfg.to_dict():
+        if config_lib.from_recorded(checkpoint["config"]).to_dict() != cfg.to_dict():
             raise ValueError("resume checkpoint config differs from this invocation")
         load_policy_state_dict(policy, checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])

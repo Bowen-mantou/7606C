@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 from .backbones import build_noise_predictor
-from .config import DiffusionConfig, PolicyConfig, VisionConfig, from_dict
+from .config import DiffusionConfig, PolicyConfig, VisionConfig, from_recorded
 from .data import NormalizationStats
 from .observation_encoder import ObservationEncoder
 
@@ -75,7 +75,7 @@ class DiffusionPolicy(nn.Module):
         stats, dataset shapes and (possibly legacy) model keys exactly the way
         the trainer wrote them.
         """
-        cfg = from_dict(checkpoint["config"])
+        cfg = from_recorded(checkpoint["config"])
         train_data = checkpoint["train_data"]
         policy = cls(
             cfg.policy,

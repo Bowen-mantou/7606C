@@ -57,6 +57,12 @@ python scripts/run_experiment.py \
 spec 里声明的整数；`scripts/train_dp.py --experiment-value` 也接受同样的字符串。
 
 `--set SECTION.KEY=VALUE`、`--seed`、`--num-demos` 是最后应用的运行时覆盖。
+它们不能覆盖所选实验的变量本身（例如 data-size 实验里的 `--num-demos`），否则直接报错；
+实验变量只能通过 `--value` / `--experiment-value` 选择。
+
+新解析的配置里每个值都必须来自 `baseline.toml`（代码不提供默认值）。读取已记录的
+checkpoint、`resume.pt`、`run.json` 时用 `config.from_recorded`：对后来才新增的字段
+（如 `policy.backbone`、backbone 结构参数、`train.betas`）补上这些 run 当时实际使用的值。
 集群上可用 `--data-root` 覆盖数据根目录。临时 smoke 可用
 `--set train.total_iters=...`；正式实验仍使用 baseline 的固定训练预算。
 

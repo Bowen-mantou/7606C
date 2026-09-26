@@ -14,7 +14,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from dp_manip.config import from_dict  # noqa: E402
+from dp_manip.config import from_recorded  # noqa: E402
 from dp_manip.envs import make_eval_envs  # noqa: E402
 from dp_manip.evaluate import evaluate  # noqa: E402
 from dp_manip.policy import DiffusionPolicy  # noqa: E402
@@ -38,7 +38,7 @@ def main() -> None:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable")
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    cfg = from_dict(checkpoint["config"])
+    cfg = from_recorded(checkpoint["config"])
     train_data = checkpoint["train_data"]
     policy = DiffusionPolicy.from_checkpoint(checkpoint, device)
     policy.eval()

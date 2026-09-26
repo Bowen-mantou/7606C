@@ -56,20 +56,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def resolve_config(args: argparse.Namespace) -> Config:
     """Resolve baseline -> task -> experiment(value) -> runtime seed/data."""
-    cfg = config_lib.load(
+    return config_lib.load_run(
         config_lib.resolve_config_path(args.task, TASKS_DIR, "task"),
         args.overrides,
         experiment=config_lib.resolve_config_path(args.experiment, EXPERIMENTS_DIR, "experiment"),
         experiment_value=args.value,
+        num_demos=args.num_demos,
+        seed=args.seed,
+        data_root=args.data_root,
     )
-    if args.num_demos is not None:
-        cfg.data.num_demos = args.num_demos
-    if args.seed is not None:
-        cfg.train.seed = args.seed
-    if args.data_root is not None:
-        cfg.data.root = str(args.data_root)
-    cfg.validate()
-    return cfg
 
 
 def experiment_context(args: argparse.Namespace, cfg: Config) -> dict:

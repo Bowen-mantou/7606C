@@ -53,20 +53,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def resolve_config(args: argparse.Namespace) -> Config:
     """Resolve the layered config plus this invocation's runtime overrides."""
-    cfg = config_lib.load(
+    return config_lib.load_run(
         args.config,
         args.overrides,
         experiment=args.experiment,
         experiment_value=args.experiment_value,
+        num_demos=args.num_demos,
+        seed=args.seed,
+        data_root=args.data_root,
     )
-    if args.num_demos is not None:
-        cfg.data.num_demos = args.num_demos
-    if args.seed is not None:
-        cfg.train.seed = args.seed
-    if args.data_root is not None:
-        cfg.data.root = str(args.data_root)
-    cfg.validate()
-    return cfg
 
 
 def experiment_context(args: argparse.Namespace, cfg: Config) -> dict | None:

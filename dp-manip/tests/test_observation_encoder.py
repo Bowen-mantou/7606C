@@ -8,13 +8,15 @@ flattened ``(B, To x Dobs)`` form.
 
 from __future__ import annotations
 
+import dataclasses
 import unittest
+from pathlib import Path
 
 try:
     import numpy as np
     import torch
 
-    from dp_manip.config import DiffusionConfig, PolicyConfig, VisionConfig
+    from dp_manip.config import DiffusionConfig, PolicyConfig, VisionConfig, load
     from dp_manip.data import NormalizationStats
     from dp_manip.observation_encoder import ObservationEncoder
     from dp_manip.policy import DiffusionPolicy, load_policy_state_dict
@@ -22,6 +24,9 @@ except ModuleNotFoundError:  # torch is only installed in the cluster environmen
     HAVE_TORCH = False
 else:
     HAVE_TORCH = True
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_stats(proprio_dim: int, action_dim: int) -> NormalizationStats:
@@ -91,7 +96,9 @@ class PolicyEncoderBoundaryTest(unittest.TestCase):
     """The UNet adapter flattens; the shared encoder never does."""
 
     def make_policy(self) -> DiffusionPolicy:
-        policy_cfg = PolicyConfig(
+        # Every field comes from baseline.toml; only sizes shrink for fast tests.
+        policy_cfg = dataclasses.replace(
+            load(ROOT / "configs" / "tasks" / "pickcube.toml").policy,
             obs_horizon=2,
             act_horizon=2,
             pred_horizon=4,

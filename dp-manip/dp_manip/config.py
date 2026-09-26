@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,26 +46,23 @@ class PolicyConfig:
     unet_dims: list[int]
     kernel_size: int
     n_groups: int
-    # Structural selector, not a scientific hyperparameter. Defaults to the
-    # canonical UNet so checkpoints written before the backbone interface load
-    # unchanged.
-    backbone: str = "unet"
+    # Structural selector, not a scientific hyperparameter.
+    backbone: str
     # Backbone architecture definitions, not scientific hyperparameters. Every
     # arm resolves the same baseline values and ``backbone`` selects which group
-    # is consumed, so a backbone comparison changes only the selector. Defaults
-    # are the donor configurations from VariDP, which also lets checkpoints
-    # written before Phase 9 resolve with their original structure.
-    transformer_layers: int = 8
-    transformer_heads: int = 4
-    transformer_embed_dim: int = 256
-    transformer_dropout_emb: float = 0.0
-    transformer_dropout_attn: float = 0.3
-    transformer_causal_attn: bool = True
-    transformer_cond_layers: int = 0
-    mlp_hidden_dim: int = 256
-    mlp_layers: int = 3
-    mlp_time_embed_dim: int = 128
-    mlp_obs_feat_dim: int = 256
+    # is consumed, so a backbone comparison changes only the selector. Recorded
+    # configs that predate a field get it from ``_HISTORICAL_VALUES``.
+    transformer_layers: int
+    transformer_heads: int
+    transformer_embed_dim: int
+    transformer_dropout_emb: float
+    transformer_dropout_attn: float
+    transformer_causal_attn: bool
+    transformer_cond_layers: int
+    mlp_hidden_dim: int
+    mlp_layers: int
+    mlp_time_embed_dim: int
+    mlp_obs_feat_dim: int
 
 
 @dataclass
@@ -296,6 +294,44 @@ def _adapt_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+# Values that recorded configs (checkpoints, resume.pt, run.json) written before
+# a field existed actually trained with. They are applied only by
+# ``from_recorded``; fresh configs must get every value from baseline.toml.
+_HISTORICAL_VALUES: dict[tuple[str, str], Any] = {
+    # Before Phase 7 the UNet was the only noise predictor.
+    ("policy", "backbone"): "unet",
+    # Before Phases 9-11 the backbone structure fields did not exist; they only
+    # describe the non-UNet arms, whose donor structure these are.
+    ("policy", "transformer_layers"): 8,
+    ("policy", "transformer_heads"): 4,
+    ("policy", "transformer_embed_dim"): 256,
+    ("policy", "transformer_dropout_emb"): 0.0,
+    ("policy", "transformer_dropout_attn"): 0.3,
+    ("policy", "transformer_causal_attn"): True,
+    ("policy", "transformer_cond_layers"): 0,
+    ("policy", "mlp_hidden_dim"): 256,
+    ("policy", "mlp_layers"): 3,
+    ("policy", "mlp_time_embed_dim"): 128,
+    ("policy", "mlp_obs_feat_dim"): 256,
+    # Before Phase 17 the trainer hard-coded AdamW betas (0.95, 0.999).
+    ("train", "betas"): [0.95, 0.999],
+}
+
+
+def from_recorded(raw: dict[str, Any]) -> Config:
+    """Rebuild the config of a recorded run (checkpoint, resume.pt or run.json).
+
+    Unlike :func:`from_dict`, fields added after the run was recorded are filled
+    with the values that run actually used, so older artifacts stay loadable.
+    """
+    raw = _adapt_legacy_config(raw)
+    for (section, key), value in _HISTORICAL_VALUES.items():
+        values = raw.get(section)
+        if isinstance(values, dict) and key not in values:
+            values[key] = copy.deepcopy(value)
+    return from_dict(raw)
+
+
 def from_dict(raw: dict[str, Any]) -> Config:
     """Build a resolved config, adapting the version-1 checkpoint layout."""
     raw = _adapt_legacy_config(raw)
@@ -476,6 +512,7 @@ def load(
 
     if experiment is None and experiment_value is not None:
         raise ValueError("experiment_value requires an experiment")
+    spec: ExperimentSpec | None = None
     if experiment is not None:
         if isinstance(experiment, Mapping):
             experiment_layer = dict(experiment)
@@ -499,5 +536,38 @@ def load(
 
     for item in overrides:
         key, value = _parse_override(item)
+        if spec is not None and key == spec.variable:
+            # Overriding the declared variable would silently leave the grid:
+            # the run would be labelled with one value but train with another.
+            raise ValueError(
+                f"{key} is the variable of experiment {spec.name!r}; "
+                "choose it with the experiment value instead of an override"
+            )
         _set_dotted(raw, key, value)
     return from_dict(raw)
+
+
+def load_run(
+    task: str | Path,
+    overrides: Sequence[str] = (),
+    *,
+    experiment: str | Path | None = None,
+    experiment_value: Any | None = None,
+    num_demos: int | None = None,
+    seed: int | None = None,
+    data_root: str | Path | None = None,
+) -> Config:
+    """Resolve one training run for the entry points.
+
+    ``--num-demos``, ``--seed`` and ``--data-root`` are ordinary runtime
+    overrides applied after ``--set``, so they go through the same experiment
+    variable check as every other override.
+    """
+    runtime = list(overrides)
+    if num_demos is not None:
+        runtime.append(f"data.num_demos={int(num_demos)}")
+    if seed is not None:
+        runtime.append(f"train.seed={int(seed)}")
+    if data_root is not None:
+        runtime.append(f"data.root={json.dumps(str(data_root))}")
+    return load(task, runtime, experiment=experiment, experiment_value=experiment_value)
