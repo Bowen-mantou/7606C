@@ -547,6 +547,17 @@ def load(
     return from_dict(raw)
 
 
+def data_root_override(data_root: str | Path) -> str:
+    """Runtime override string for a ``--data-root`` value.
+
+    ``load_run`` and the run planner must resolve ``data.root`` identically,
+    so the formatting lives here instead of in either caller. ``json.dumps``
+    quotes the path, so a root with spaces or TOML-significant characters
+    cannot be mis-parsed by the ordinary override parser.
+    """
+    return f"data.root={json.dumps(str(data_root))}"
+
+
 def load_run(
     task: str | Path,
     overrides: Sequence[str] = (),
@@ -569,5 +580,5 @@ def load_run(
     if seed is not None:
         runtime.append(f"train.seed={int(seed)}")
     if data_root is not None:
-        runtime.append(f"data.root={json.dumps(str(data_root))}")
+        runtime.append(data_root_override(data_root))
     return load(task, runtime, experiment=experiment, experiment_value=experiment_value)

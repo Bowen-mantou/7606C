@@ -17,7 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from .completion import Completion, completion_state
-from .config import Config, ExperimentSpec, default_run_name, load, load_experiment
+from .config import (
+    Config,
+    ExperimentSpec,
+    data_root_override,
+    default_run_name,
+    load,
+    load_experiment,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,19 +114,25 @@ def plan_runs(
     *,
     output_root: str | Path,
     overrides: Sequence[str] = (),
+    data_root: str | Path | None = None,
 ) -> list[PlannedRun]:
     """Attach a completion state to every declared run under ``output_root``.
 
     Read-only: it only inspects ``<output_root>/<run name>`` and never creates
     directories, starts training or writes any completion file of its own.
-    Pass the same ``overrides`` as the training command (for example a smoke
-    ``--set train.total_iters=200``) so a finished run trained with them is
-    recognized as completed instead of looking like a config conflict.
+    Pass the same ``overrides`` and ``data_root`` as the training command (for
+    example a smoke ``--set train.total_iters=200`` plus the ``--data-root`` a
+    Slurm script exports), so a finished run trained with them is recognized
+    as completed instead of looking like a config conflict. ``data_root`` is
+    optional; without it the declared config's own root is used.
     """
+    runtime = list(overrides)
+    if data_root is not None:
+        runtime.append(data_root_override(data_root))
     return [
         PlannedRun(
             run,
-            completion_state(run.resolve(overrides), run.directory(output_root)),
+            completion_state(run.resolve(runtime), run.directory(output_root)),
         )
         for run in runs(experiment_path, task)
     ]

@@ -300,8 +300,8 @@ class TrainQueueTest(unittest.TestCase):
         module = load_script("train_queue")
         captured = {}
 
-        def fake_plan(experiment, task, *, output_root, overrides):
-            captured["plan"] = (experiment, task, output_root, tuple(overrides))
+        def fake_plan(experiment, task, *, output_root, overrides, data_root):
+            captured["plan"] = (experiment, task, output_root, tuple(overrides), data_root)
             return []
 
         def fake_queue(planned, *, output_root, data_root, overrides, workers):
@@ -324,6 +324,7 @@ class TrainQueueTest(unittest.TestCase):
                 TASK,
                 Path("/tmp/intended-runs"),
                 ("train.total_iters=200",),
+                Path("/tmp/intended-data"),
             ),
         )
         self.assertEqual(

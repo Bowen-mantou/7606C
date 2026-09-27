@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 from dp_manip.completion import Completion, RunState, completion_state
+from dp_manip.config import data_root_override
 from dp_manip.runlist import Run, plan_runs, runs
 
 
@@ -171,9 +172,37 @@ class RunPlanTest(unittest.TestCase):
             conflicting = next(item for item in without if item.run.name == run.name)
             self.assertIs(conflicting.completion.state, RunState.CONFLICT)
 
+    def test_data_root_participates_in_the_completion_check(self) -> None:
+        # The Slurm entry points export DATA_ROOT as --data-root; the planner
+        # must receive the same override or every finished run looks like a
+        # config conflict and is queued again.
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            run = runs(EXPERIMENT, TASK)[0]
+            data_root = "/scratch/user/dp-data/dataset"
+            checkpoint_dir = write_checkpoints(output_root, run)
+            (checkpoint_dir / "final.pt").write_bytes(b"")
+            write_run_json(
+                output_root,
+                run,
+                run.resolve((data_root_override(data_root),)).to_dict(),
+            )
+
+            planned = plan_runs(
+                EXPERIMENT, TASK, output_root=output_root, data_root=data_root
+            )
+            completed = next(item for item in planned if item.run.name == run.name)
+            self.assertIs(completed.completion.state, RunState.COMPLETED)
+
+            without = plan_runs(EXPERIMENT, TASK, output_root=output_root)
+            conflicting = next(item for item in without if item.run.name == run.name)
+            self.assertIs(conflicting.completion.state, RunState.CONFLICT)
+
 
 class SweepPlanCliTest(unittest.TestCase):
-    def run_plan(self, output_root: Path) -> subprocess.CompletedProcess:
+    def run_plan(
+        self, output_root: Path, *extra: str
+    ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [
                 sys.executable,
@@ -185,6 +214,7 @@ class SweepPlanCliTest(unittest.TestCase):
                 TASK,
                 "--output-root",
                 str(output_root),
+                *extra,
             ],
             cwd=ROOT,
             capture_output=True,
@@ -209,6 +239,23 @@ class SweepPlanCliTest(unittest.TestCase):
             status = {line.split()[1]: line.split()[2] for line in lines[:-1]}
             self.assertEqual(status[finished.name], "completed")
             self.assertEqual(sum(value == "completed" for value in status.values()), 1)
+
+    def test_plan_accepts_the_data_root_the_slurm_scripts_export(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            finished = runs(EXPERIMENT, TASK)[0]
+            data_root = "/scratch/user/dp-data/dataset"
+            checkpoint_dir = write_checkpoints(output_root, finished)
+            (checkpoint_dir / "final.pt").write_bytes(b"")
+            write_run_json(
+                output_root,
+                finished,
+                finished.resolve((data_root_override(data_root),)).to_dict(),
+            )
+
+            result = self.run_plan(output_root, "--data-root", data_root)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("1 completed (skipped)", result.stdout)
 
     def test_plan_shows_a_resumable_run_as_pending(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

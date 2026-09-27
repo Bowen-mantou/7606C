@@ -94,7 +94,12 @@ def build_command(args: argparse.Namespace, run: Run) -> list[str]:
 def main() -> None:
     args = parse_args()
     if args.action == "plan":
-        planned = plan_runs(args.experiment, args.task, output_root=args.output_root)
+        planned = plan_runs(
+            args.experiment,
+            args.task,
+            output_root=args.output_root,
+            data_root=args.data_root,
+        )
         raise SystemExit(print_plan(planned))
     grid = runs(args.experiment, args.task)
     if args.action == "show":

@@ -152,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         args.task,
         output_root=args.output_root,
         overrides=args.overrides,
+        data_root=args.data_root,
     )
     summary = queue_training(
         planned,
