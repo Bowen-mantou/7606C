@@ -14,8 +14,9 @@ mlp，各 1 个训练 seed，共 3 个 run）；降低训练预算用普通 `--s
 ```bash
 cd ~/7606C/dp-manip
 ./setup.sh                       # 若 .venv 尚未建立
-export DATA_ROOT=/scratch/$USER/dp-data/dataset
-export SMOKE_ROOT=/scratch/$USER/dp-smoke
+# 本集群没有 /scratch，数据与输出都放在 $HOME；按实际部署调整这两个根目录。
+export DATA_ROOT=$HOME/maniskill-demogen/data/dataset
+export SMOKE_ROOT=$HOME/dp-smoke
 rm -rf "$SMOKE_ROOT"             # 每次都从干净的 smoke root 开始
 
 .venv/bin/python scripts/inspect_dataset.py --data-root "$DATA_ROOT" \
@@ -73,7 +74,9 @@ completed: 3 skipped: 0 failed: 0 interrupted: 0
 
 ```bash
 srun --jobid="$JOBID" --overlap bash -c '
-  for pid in $(pgrep -f "scripts/train_dp.py"); do
+  for pid in $(pgrep -f "train_dp.py"); do
+    args=$(tr "\0" " " < /proc/$pid/cmdline)
+    case "$args" in *".venv/bin/python"*) ;; *) continue ;; esac
     echo "pid=$pid $(tr "\0" "\n" < /proc/$pid/environ | grep ^CUDA_VISIBLE_DEVICES=)"
   done'
 
@@ -81,8 +84,10 @@ srun --jobid="$JOBID" --overlap nvidia-smi \
   --query-compute-apps=pid,used_memory --format=csv
 ```
 
-期望：两个 `train_dp.py` pid，分别只有 `CUDA_VISIBLE_DEVICES=0` 和 `CUDA_VISIBLE_DEVICES=1`
-（单值，无逗号）；`nvidia-smi` 显示两个 pid 分别占用一张卡。
+期望：python 进程（两个 trainer 及其 DataLoader worker）都只带单值
+`CUDA_VISIBLE_DEVICES=0` 或 `=1`，不出现 `0,1`；`nvidia-smi` 只显示两个 trainer pid
+各自占用一张卡。（`pgrep -f train_dp.py` 也会匹配 DataLoader worker 和检查用 shell 自身，
+上面的过滤器只保留 python 进程。）
 
 **1d. 训练产物。**
 
@@ -90,7 +95,7 @@ srun --jobid="$JOBID" --overlap nvidia-smi \
 for backbone in unet transformer mlp; do
   run="$SMOKE_ROOT/peginsertionside_rgb_${backbone}_n100_s1"
   ls "$run/checkpoints/final.pt" "$run/checkpoints/resume.pt" "$run/summary.json"
-  cat "$run/run.json" | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); print(d["train"]["total_iters"], d["policy"]["backbone"])'
+  cat "$run/run.json" | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin)["config"]; print(d["train"]["total_iters"], d["policy"]["backbone"])'
 done
 ```
 
@@ -99,7 +104,7 @@ done
 
 ## Round 2：抢占、requeue 与续训
 
-先清空 smoke root，重新提交与 Round 1 相同的命令，等两个 worker 都 `starting` 后尽快故意中断：
+先清空 smoke root，重新提交与 Round 1 相同的命令，等两个 trainer 都进入训练循环后故意中断：
 
 ```bash
 rm -rf "$SMOKE_ROOT"
@@ -109,8 +114,10 @@ sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/smoke.t
   --set 'train.checkpoint_steps=[200]'
 export JOBID=<新的 JOBID>
 
-# 等到 1b 里两个 worker 都 starting 之后，用 Slurm 的预抢占信号中断：
-# （普通 scancel "$JOBID" 会直接取消作业，不会给 trainer 写 checkpoint 的机会）
+# 等到两个 trainer 都进入训练循环（各自的 logs/<run>.log 出现 [000001/...]）后再发信号。
+# 不要在数据集加载阶段就发：那时 trainer 还没安装 USR1 handler，会被默认动作杀死并
+# 记为 failed（该 run 下次分配会从头重训，但日志不符合本步骤期望）。
+# 普通 scancel "$JOBID" 会直接取消作业，不会给 trainer 写 checkpoint 的机会：
 scancel --signal=USR1 --batch "$JOBID"
 ```
 
@@ -187,5 +194,5 @@ rm -rf "$SMOKE_ROOT"
 - [ ] （可选）`SPLIT=train` 评估产出 `eval/train_final.json`。
 
 全部通过后才用 `slurm/train_dual_gpu.sbatch` 提交正式 100k-step sweep；正式提交不带
-`--set` 预算覆盖，`RUN_ROOT` 使用 `/scratch/$USER/dp-runs` 并在 data-size 与 backbone
-之间保持一致。
+`--set` 预算覆盖，`RUN_ROOT` 使用同一个目录（本集群用 `$HOME/dp-runs`，集群没有
+`/scratch`）并在 data-size 与 backbone 之间保持一致。

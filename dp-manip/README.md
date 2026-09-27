@@ -67,6 +67,10 @@ traj_i/actions        float32 (T, A)
 ## 集群快速开始
 
 ```bash
+# 0. 登录节点：本集群没有 /scratch，数据与输出都放在 $HOME
+export DATA_ROOT=$HOME/maniskill-demogen/data/dataset
+export RUN_ROOT=$HOME/dp-runs
+
 # 1. 登录节点建环境
 ./setup.sh
 
@@ -81,19 +85,19 @@ traj_i/actions        float32 (T, A)
 .venv/bin/python scripts/sweep.py show --experiment configs/experiments/data_size.toml --task peginsertionside
 
 # 5. 提交一个 task 的数据量实验：Slurm 中只有 1 个作业，作业内 2 张 GPU
-sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
+sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,DATA_ROOT="$DATA_ROOT",RUN_ROOT=$RUN_ROOT \
   slurm/train_dual_gpu.sbatch
 
 # 6. 评估同一 task（completed run 才有 checkpoint；缺 checkpoint 的 run 会在 preflight 明确失败）
-sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,RUN_ROOT=/scratch/$USER/dp-runs \
+sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,RUN_ROOT=$RUN_ROOT \
   slurm/eval_dual_gpu.sbatch
 # 训练曲线诊断：CHECKPOINT=step_060000.pt SPLIT=val；SPLIT=train 走所有嵌套子集共有的前 25 个训练 seed
-sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,RUN_ROOT=/scratch/$USER/dp-runs,CHECKPOINT=step_060000.pt,SPLIT=val \
+sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/data_size.toml,RUN_ROOT=$RUN_ROOT,CHECKPOINT=step_060000.pt,SPLIT=val \
   slurm/eval_dual_gpu.sbatch
 
 # 7. 轨道 B（backbone）：只切换 EXPERIMENT，RUN_ROOT 必须与第 5 步相同
 #    unet 格子就是 data-size 的 N=100 格子（同名同目录）：已有 final.pt 时直接跳过并复用。
-sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/backbone.toml,DATA_ROOT="$DATA_ROOT",RUN_ROOT=/scratch/$USER/dp-runs \
+sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/backbone.toml,DATA_ROOT="$DATA_ROOT",RUN_ROOT=$RUN_ROOT \
   slurm/train_dual_gpu.sbatch
 ```
 
@@ -106,8 +110,8 @@ sbatch --export=ALL,TASK=peginsertionside,EXPERIMENT=configs/experiments/backbon
 ```bash
 squeue -u "$USER"                                  # 应只有 1 个作业，ID 无 _<array index> 后缀
 tail -f slurm-dp-rgb-train-dual-<jobid>.out        # 调度事件 + completed/skipped/failed/interrupted 汇总
-tail -f /scratch/$USER/dp-runs/logs/<run name>.log        # 单个训练 run
-tail -f /scratch/$USER/dp-runs/logs/eval/<run name>.log   # 单个评估 run
+tail -f $RUN_ROOT/logs/<run name>.log        # 单个训练 run
+tail -f $RUN_ROOT/logs/eval/<run name>.log   # 单个评估 run
 ```
 
 `[worker 0]` / `[worker 1]` 分别只看到物理 GPU 0/1（子进程内即逻辑 `cuda:0`）。
