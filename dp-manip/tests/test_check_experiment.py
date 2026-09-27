@@ -101,6 +101,45 @@ class MatrixCheckTest(unittest.TestCase):
             status = checker.main(["--experiment", "data_size", "--task", "pickcube", "--seed", "9"])
         self.assertEqual(status, 1)
 
+    def test_cli_applies_set_overrides_to_declaration_and_recorded_runs(self) -> None:
+        # The smoke workflow submits a reduced budget with --set; the checker
+        # must accept the same overrides or every smoke run would look stale.
+        checker = load_checker()
+        experiment = EXPERIMENTS / "smoke.toml"
+        spec = load_experiment(experiment)
+        overrides = (
+            "train.total_iters=200",
+            "train.validation_steps=[200]",
+            "train.checkpoint_steps=[200]",
+        )
+        set_args = [argument for item in overrides for argument in ("--set", item)]
+        declared = checker.matrix_cells(
+            TASKS / "pickcube.toml", experiment, spec, overrides=overrides
+        )
+        self.assertEqual([cell.config.train.total_iters for cell in declared], [200, 200, 200])
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = checker.main(["--experiment", "smoke", "--task", "pickcube", *set_args])
+        self.assertEqual(status, 0, output.getvalue())
+        self.assertIn("Gate B ok", output.getvalue())
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for cell in declared:
+                run_dir = root / default_run_name(cell.config)
+                run_dir.mkdir(parents=True)
+                (run_dir / "run.json").write_text(
+                    json.dumps({"config": cell.config.to_dict()}), encoding="utf-8"
+                )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                status = checker.main(
+                    ["--experiment", "smoke", "--task", "pickcube", "--run-root", str(root), *set_args]
+                )
+            self.assertEqual(status, 0, output.getvalue())
+            self.assertIn("3 cells ok", output.getvalue())
+
     def test_run_root_checks_the_recorded_configs(self) -> None:
         checker = load_checker()
         spec = load_experiment(EXPERIMENTS / "backbone.toml")

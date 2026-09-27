@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import subprocess
 import sys
 import unittest
 from pathlib import Path
 
 from dp_manip.config import default_run_name, load_experiment
+from dp_manip.runlist import eval_command, train_command
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +75,149 @@ class SweepTest(unittest.TestCase):
         data_size = {run.name for run in module.runs(ROOT / "configs" / "experiments" / "data_size.toml")}
         unet_names = {run.name for run in grid if run.value == "unet"}
         self.assertTrue(unet_names <= data_size)
+
+    def test_full_grid_sizes_are_stable(self) -> None:
+        module = load_sweep_module()
+        data_size = ROOT / "configs" / "experiments" / "data_size.toml"
+        backbone = ROOT / "configs" / "experiments" / "backbone.toml"
+        self.assertEqual(len(module.runs(data_size)), 96)
+        self.assertEqual(len(module.runs(backbone)), 90)
+
+    def test_task_filter_keeps_the_declared_order(self) -> None:
+        module = load_sweep_module()
+        experiment = ROOT / "configs" / "experiments" / "data_size.toml"
+        full = module.runs(experiment)
+        filtered = module.runs(experiment, task="peginsertionside")
+        self.assertEqual(len(filtered), 16)
+        self.assertEqual(filtered, [run for run in full if run.task == "peginsertionside"])
+        self.assertEqual(
+            [(run.value, run.seed) for run in filtered],
+            [
+                (25, 1),
+                (25, 2),
+                (25, 3),
+                (50, 1),
+                (50, 2),
+                (50, 3),
+                (100, 1),
+                (100, 2),
+                (100, 3),
+                (100, 4),
+                (100, 5),
+                (200, 1),
+                (200, 2),
+                (200, 3),
+                (200, 4),
+                (200, 5),
+            ],
+        )
+
+    def test_task_filter_on_the_backbone_grid(self) -> None:
+        module = load_sweep_module()
+        experiment = ROOT / "configs" / "experiments" / "backbone.toml"
+        full = module.runs(experiment)
+        filtered = module.runs(experiment, task="peginsertionside")
+        self.assertEqual(len(filtered), 15)
+        self.assertEqual(filtered, [run for run in full if run.task == "peginsertionside"])
+        self.assertEqual(
+            [(run.value, run.seed) for run in filtered],
+            [
+                (value, seed)
+                for value in ("unet", "transformer", "mlp")
+                for seed in (1, 2, 3, 4, 5)
+            ],
+        )
+
+    def test_unknown_task_is_rejected_by_the_run_list(self) -> None:
+        module = load_sweep_module()
+        experiment = ROOT / "configs" / "experiments" / "data_size.toml"
+        with self.assertRaisesRegex(ValueError, "unknown task"):
+            module.runs(experiment, task="peginsertion")
+
+    def test_cli_rejects_an_unknown_task_with_a_nonzero_exit(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "sweep.py"), "show", "--task", "peginsertion"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("peginsertion", result.stderr)
+
+    def test_selected_run_indexes_inside_the_filtered_grid(self) -> None:
+        module = load_sweep_module()
+        experiment = ROOT / "configs" / "experiments" / "backbone.toml"
+        filtered = module.runs(experiment, task="peginsertionside")
+        args = argparse.Namespace(experiment=experiment, task="peginsertionside", index=0)
+        self.assertEqual(module.selected_run(args), filtered[0])
+        # Without --task the index keeps counting through the full task-major grid.
+        args = argparse.Namespace(experiment=experiment, task=None, index=64)
+        self.assertEqual(module.selected_run(args), module.runs(experiment)[64])
+        args = argparse.Namespace(experiment=experiment, task="peginsertionside", index=15)
+        with self.assertRaisesRegex(ValueError, r"\[0, 14\]"):
+            module.selected_run(args)
+
+    def test_backbone_unet_cells_reuse_the_data_size_n100_runs(self) -> None:
+        module = load_sweep_module()
+        output_root = ROOT / "runs"
+        n100 = {
+            (run.task, run.seed): run
+            for run in module.runs(ROOT / "configs" / "experiments" / "data_size.toml")
+            if run.value == 100
+        }
+        unet = {
+            (run.task, run.seed): run
+            for run in module.runs(ROOT / "configs" / "experiments" / "backbone.toml")
+            if run.value == "unet"
+        }
+        self.assertEqual(len(n100), len(module.TASKS) * 5)
+        self.assertEqual(set(unet), set(n100))
+        for key, run in unet.items():
+            with self.subTest(task=key[0], seed=key[1]):
+                reference = n100[key]
+                self.assertEqual(run.name, reference.name)
+                self.assertEqual(run.resolve().to_dict(), reference.resolve().to_dict())
+                self.assertEqual(run.directory(output_root), reference.directory(output_root))
+
+    def test_sweep_train_command_is_the_shared_train_command(self) -> None:
+        module = load_sweep_module()
+        run = module.runs(module.DEFAULT_EXPERIMENT, task="peginsertionside")[0]
+        args = argparse.Namespace(
+            action="train",
+            experiment=run.experiment,
+            output_root=ROOT / "runs",
+            data_root=ROOT / "data",
+        )
+        self.assertEqual(
+            module.build_command(args, run),
+            train_command(run, output_root=ROOT / "runs", data_root=ROOT / "data"),
+        )
+
+    def test_sweep_eval_command_is_the_shared_eval_command(self) -> None:
+        module = load_sweep_module()
+        run = module.runs(module.DEFAULT_EXPERIMENT, task="peginsertionside")[0]
+        args = argparse.Namespace(
+            action="eval",
+            experiment=run.experiment,
+            output_root=ROOT / "runs",
+            checkpoint="step_010000.pt",
+            split="train",
+            episodes=None,
+            num_envs=4,
+            render_backend="gpu",
+        )
+        self.assertEqual(
+            module.build_command(args, run),
+            eval_command(
+                run,
+                output_root=ROOT / "runs",
+                checkpoint="step_010000.pt",
+                split="train",
+                episodes=None,
+                num_envs=4,
+                render_backend="gpu",
+            ),
+        )
 
     def test_train_split_eval_uses_experiment_diagnostic_budget(self) -> None:
         module = load_sweep_module()

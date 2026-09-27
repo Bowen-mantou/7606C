@@ -40,9 +40,11 @@ mlp_obs_feat_dim = 256
 seed = 1
 total_iters = 100000
 batch_size = 64
-# DataLoader workers; matches the 4 CPUs per GPU job on the HKU cluster.
-# Batches depend only on (seed, step), so this does not change training.
-num_workers = 4
+# DataLoader workers per trainer. The single dual-GPU job has 8 CPUs and runs
+# two trainers, so the default is 3 each; single-run jobs can override it with
+# --set train.num_workers=N. Batches depend only on (seed, step), so this is a
+# machine knob, not a scientific parameter.
+num_workers = 3
 lr = 1e-4
 betas = [0.95, 0.999]
 weight_decay = 1e-6

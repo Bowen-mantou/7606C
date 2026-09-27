@@ -31,6 +31,10 @@ config 只在 `policy.backbone` 上不同。N_B 默认使用 baseline 的 `data.
 `[diagnostics] train_eval_episodes = 25` 与 data-size grid 相同，用于在共有的前 25 个训练
 seed 上做过拟合诊断。
 
+`experiments/smoke.toml` 是集群 smoke 用的缩小网格（`policy.backbone` 三个 arm × seed 1），
+训练预算通过 `--set train.total_iters=...` 等运行时覆盖传入，不写进正式实验定义；
+步骤见 `docs/cluster-smoke-test.zh-CN.md`。
+
 `data.num_demos=N` 固定选择按 `episode_seed` 升序排序后的前 N 条示范，与 HDF5 导出
 顺序和 `episode_id` 无关，因此 `25 ⊂ 50 ⊂ 100 ⊂ 200` 对任何导出结果都成立；
 `episode_id` 与 `episode_seed` 在同一 split 内必须唯一，重复会直接报错。

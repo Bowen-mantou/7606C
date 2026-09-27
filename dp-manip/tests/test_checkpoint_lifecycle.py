@@ -130,6 +130,24 @@ class CheckpointLifecycleTest(unittest.TestCase):
             resumed = torch.load(final_path, map_location="cpu", weights_only=False)
             self.assertEqual(resumed["step"], 2)
 
+    def test_finished_run_with_another_config_is_not_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = smoke_config(root / "data")
+            output_root = root / "runs"
+            self.assertEqual(run_training(cfg, output_root=output_root, device="cpu"), 0)
+
+            run_dir = output_root / config_lib.default_run_name(cfg)
+            run_info_path = run_dir / "run.json"
+            run_info = json.loads(run_info_path.read_text(encoding="utf-8"))
+            run_info["config"]["train"]["seed"] += 1
+            run_info_path.write_text(json.dumps(run_info), encoding="utf-8")
+
+            # final.pt belongs to a different config, so the trainer must refuse
+            # instead of silently reusing it (the planner reports this conflict).
+            with self.assertRaises(FileExistsError):
+                run_training(cfg, output_root=output_root, device="cpu")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,14 @@ test pins the backbone math and the shared policy boundary on CPU.
 
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
+
+# Import the helper module by its file location: ``tests`` is not a package,
+# so ``test_backbone_interface`` is not importable by default from the repo
+# root.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_backbone_interface import make_observations, make_policy
 

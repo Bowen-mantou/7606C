@@ -44,6 +44,11 @@ the 4 CPUs of a GPU job on the HKU cluster (the Slurm scripts request `--cpus-pe
 Batches are drawn from `(seed, step)` and workers consume no randomness, so training is
 unchanged.
 
+The single-job dual-GPU refactor (schema version 8) lowered `train.num_workers` from 4 to 3
+because one Slurm job now runs two trainers on 8 CPUs. Batches are still drawn from
+`(seed, step)` and workers consume no randomness, so training is unchanged; single runs keep
+overriding `train.num_workers` through the normal config layer.
+
 ## Frozen behavior
 
 ### Dataset and preprocessing

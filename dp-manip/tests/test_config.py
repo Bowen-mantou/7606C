@@ -151,11 +151,34 @@ val_path = "val.h5"
         with self.assertRaisesRegex(ValueError, "is not in experiment"):
             load(TASKS / "pickcube.toml", experiment=path, experiment_value="banana")
 
+    def test_smoke_experiment_definition_and_resolution(self) -> None:
+        path = ROOT / "configs" / "experiments" / "smoke.toml"
+        spec = load_experiment(path)
+        self.assertEqual(spec.name, "smoke")
+        self.assertEqual(spec.variable, "policy.backbone")
+        self.assertEqual(spec.values, ("unet", "transformer", "mlp"))
+        for value in spec.values:
+            self.assertEqual(spec.seeds_for(value), (1,))
+        resolved = load(TASKS / "pickcube.toml", experiment=path, experiment_value="transformer")
+        self.assertEqual(resolved.policy.backbone, "transformer")
+
     def test_optimizer_betas_resolve_from_baseline(self) -> None:
         resolved = load(TASKS / "pickcube.toml")
         self.assertEqual(resolved.train.betas, [0.95, 0.999])
         overridden = load(TASKS / "pickcube.toml", ["train.betas=[0.9,0.95]"])
         self.assertEqual(overridden.train.betas, [0.9, 0.95])
+
+    def test_dual_trainer_data_loader_default_and_override(self) -> None:
+        task = TASKS / "pickcube.toml"
+        # The single 8-CPU job runs two trainers, so the default is 3 workers
+        # each; the value stays a config override, never a hard-coded trainer
+        # setting (plan §6.8).
+        self.assertEqual(load(task).train.num_workers, 3)
+        for value in (0, 2, 4):
+            with self.subTest(num_workers=value):
+                self.assertEqual(
+                    load(task, [f"train.num_workers={value}"]).train.num_workers, value
+                )
 
     def test_invalid_training_and_evaluation_values_are_rejected(self) -> None:
         cases = (

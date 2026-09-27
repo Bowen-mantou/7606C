@@ -30,6 +30,12 @@ try:
     from dp_manip.policy import DiffusionPolicy, load_policy_state_dict
 except ModuleNotFoundError:  # torch is only installed in the cluster environment
     HAVE_TORCH = False
+    # Keep the module importable without torch so unittest reports the tests
+    # below as skipped instead of failing to collect them. The names are only
+    # referenced by tests guarded by the HAVE_TORCH skip decorators.
+    MLPBackbone = NoisePredictor = TransformerBackbone = UNetBackbone = None
+    SinusoidalPosEmb = expand_timesteps = None
+    NormalizationStats = DiffusionPolicy = load_policy_state_dict = None
 else:
     HAVE_TORCH = True
 

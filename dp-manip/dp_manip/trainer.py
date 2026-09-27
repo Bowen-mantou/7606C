@@ -24,6 +24,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from . import config as config_lib
+from .completion import RunState, completion_state
 from .config import Config
 from .data import (
     DatasetInfo,
@@ -213,17 +214,15 @@ def run_training(
     checkpoint_dir = run_dir / "checkpoints"
     final_path = checkpoint_dir / "final.pt"
     resume_path = checkpoint_dir / "resume.pt"
-    if final_path.is_file():
-        # Only skip when the finished run is this configuration; otherwise a
-        # different arm would silently reuse another arm's checkpoint.
-        run_info_path = run_dir / "run.json"
-        if run_info_path.is_file():
-            finished = json.loads(run_info_path.read_text(encoding="utf-8"))["config"]
-            if config_lib.from_recorded(finished).to_dict() != cfg.to_dict():
-                raise FileExistsError(
-                    f"{run_dir} holds a finished run with a different config; "
-                    "choose another --exp or output root"
-                )
+    # The planner uses this same decision, so an existing final.pt is never
+    # reused for a different configuration by either entry point.
+    finished = completion_state(cfg, run_dir)
+    if finished.state is RunState.CONFLICT:
+        raise FileExistsError(
+            f"{run_dir} holds a finished run with a different config; "
+            "choose another --exp or output root"
+        )
+    if finished.state is RunState.COMPLETED:
         print(f"{experiment}: final checkpoint already exists; nothing to do")
         return 0
     run_dir.mkdir(parents=True, exist_ok=True)

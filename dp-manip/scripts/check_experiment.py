@@ -20,6 +20,8 @@ trained with from ``<run-root>/<run name>/run.json``. That is where real drift
 lives: runs submitted under an older ``baseline.toml``, or with a runtime
 ``--set``/``--num-demos``. Recorded configs are compared with each other and
 with the current declaration; cells without ``run.json`` are listed as not run.
+Pass the same ``--set`` values a smoke submitted so its recorded config is
+compared against the intended declaration.
 
 The exit status is non-zero when unexpected drift is found. Every cell also
 gets a ``control_hash`` over its non-experimental values (§19); all cells of a
@@ -84,6 +86,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, help="restrict to one declared replicate seed")
     parser.add_argument("--data-root", type=Path, help="runtime override for data.root")
     parser.add_argument("--num-demos", type=int, help="runtime override for data.num_demos")
+    parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="SECTION.KEY=VALUE",
+        help="runtime override applied to the declared cells (repeatable; must match the runs)",
+    )
     parser.add_argument(
         "--run-root",
         type=Path,
@@ -191,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
     else:
         task_paths = sorted(TASKS_DIR.glob("*.toml"))
-    overrides: list[str] = []
+    overrides: list[str] = list(args.overrides)
     if args.data_root is not None:
         overrides.append(f"data.root={args.data_root}")
     if args.num_demos is not None:
