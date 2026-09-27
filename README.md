@@ -5,6 +5,7 @@ pipeline 运行；`VariDP` 保留为 backbone 实现的 donor，已冻结，不�
 
 | 目录 | 做什么 |
 | --- | --- |
+| [maniskill-demogen](./maniskill-demogen) | **Demo Gen**：按任务生成 ManiSkill RGB + state 示范数据，支持断点续跑与 Slurm 批处理 |
 | [dp-manip](./dp-manip) | **统一 pipeline**：data-efficiency（示范量 25 / 50 / 100 / 200，按条件加 400）与 backbone（UNet / Transformer / MLP） |
 | [VariDP](./VariDP) | 历史 donor：UNet / DP-T / MLP 的实现来源，三者已迁移进 `dp-manip/dp_manip/backbones/`，目录本身冻结（见 [VariDP/LEGACY.md](./VariDP/LEGACY.md)） |
 
